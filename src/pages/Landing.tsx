@@ -16,7 +16,7 @@ import {
   Zap,
   Database,
   Cloud,
-  ShieldCheck
+  Rocket
 } from "lucide-react";
 
 export default function Landing() {
@@ -78,8 +78,8 @@ export default function Landing() {
     },
     {
       icon: Cloud,
-      title: "Firebase",
-      description: "認証・ホスティングをクラウドで管理し、安心して運用できます。"
+      title: "Firebase (Auth / DB)",
+      description: "認証とデータベースをクラウドで運用し、スケールとセキュリティを両立。"
     },
     {
       icon: Database,
@@ -87,9 +87,9 @@ export default function Landing() {
       description: "型安全なデータベースアクセスで、スキーマ変更にも強い設計。"
     },
     {
-      icon: ShieldCheck,
-      title: "Node.js + Express",
-      description: "サーバーサイドでの API 提供やバッチ処理を安定して実行。"
+      icon: Rocket,
+      title: "Vercel",
+      description: "グローバルエッジネットワークでフロントエンドを高速ホスティング。"
     }
   ];
 
