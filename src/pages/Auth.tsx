@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { APP_LOGO, APP_TITLE } from "@/const";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Link, useLocation } from "wouter";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
-import { auth } from "@/lib/firebase";
+import { getFirebaseAuth } from "@/lib/firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -66,7 +67,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
   const [error, setError] = useState<string | null>(null);
   const isSignup = mode === "signup";
   const text = copy[mode];
-  const [, setLocation] = useLocation();
+  const router = useRouter();
 
   const isDisabled = useMemo(() => {
     if (!form.email || !form.password) return true;
@@ -74,7 +75,13 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     return status === "submitting";
   }, [form.email, form.password, form.confirm, form.name, isSignup, status]);
 
+  const getAuthClient = () => {
+    const auth = getFirebaseAuth();
+    return auth;
+  };
+
   const syncSession = async () => {
+    const auth = getAuthClient();
     const currentUser = auth.currentUser;
     if (!currentUser) {
       throw new Error("サインイン状態を確認できませんでした。");
@@ -105,6 +112,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
     setError(null);
 
     try {
+      const auth = getAuthClient();
       if (isSignup) {
         await createUserWithEmailAndPassword(auth, form.email, form.password);
         if (auth.currentUser && form.name) {
@@ -115,7 +123,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
       }
       await syncSession();
       setStatus("success");
-      setLocation("/dashboard");
+      router.push("/dashboard");
     } catch (err: any) {
       setStatus("idle");
       let message = err?.message || "エラーが発生しました。";
@@ -260,8 +268,8 @@ function AuthPage({ mode }: { mode: AuthMode }) {
 
           <p className="text-sm text-muted-foreground text-center">
             {text.switchQuestion}{" "}
-            <Link href={text.switchHref}>
-              <a className="font-medium text-primary hover:underline">{text.switchCta}</a>
+            <Link href={text.switchHref} className="font-medium text-primary hover:underline">
+              {text.switchCta}
             </Link>
           </p>
         </div>
@@ -295,3 +303,5 @@ function AuthPage({ mode }: { mode: AuthMode }) {
 export const SignInPage = () => <AuthPage mode="signin" />;
 
 export const SignUpPage = () => <AuthPage mode="signup" />;
+
+export default SignInPage;
