@@ -10,7 +10,13 @@ import {
   Clock, 
   Target,
   ArrowRight,
-  CheckCircle2
+  CheckCircle2,
+  Code2,
+  Layout,
+  Zap,
+  Database,
+  Cloud,
+  ShieldCheck
 } from "lucide-react";
 
 export default function Landing() {
@@ -52,6 +58,39 @@ export default function Landing() {
     "就活情報が散らばらず、一箇所で完結",
     "締切や面接日を見逃すリスクを削減",
     "選考状況を可視化して、戦略的に就活を進められる"
+  ];
+
+  const techStack = [
+    {
+      icon: Code2,
+      title: "React + TypeScript",
+      description: "モダンなフロントエンド技術で、型安全かつ快適な開発体験を実現。"
+    },
+    {
+      icon: Zap,
+      title: "Vite",
+      description: "高速なビルドとホットリロードで、素早くフィードバックを得られます。"
+    },
+    {
+      icon: Layout,
+      title: "Tailwind CSS",
+      description: "ユーティリティファーストなスタイリングで、デザインを柔軟に構築。"
+    },
+    {
+      icon: Cloud,
+      title: "Firebase",
+      description: "認証・ホスティングをクラウドで管理し、安心して運用できます。"
+    },
+    {
+      icon: Database,
+      title: "Drizzle ORM",
+      description: "型安全なデータベースアクセスで、スキーマ変更にも強い設計。"
+    },
+    {
+      icon: ShieldCheck,
+      title: "Node.js + Express",
+      description: "サーバーサイドでの API 提供やバッチ処理を安定して実行。"
+    }
   ];
 
   return (
@@ -157,6 +196,35 @@ export default function Landing() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 技術スタック */}
+      <section className="py-20 bg-muted/20">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h3 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+              技術スタック
+            </h3>
+            <p className="text-lg text-muted-foreground">
+              安定した開発と運用を支える主要な技術基盤です
+            </p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            {techStack.map((stack, index) => (
+              <Card key={index} className="border-border/80 bg-card/80">
+                <CardHeader className="flex flex-row items-center gap-3">
+                  <stack.icon className="h-10 w-10 text-primary" />
+                  <CardTitle className="text-foreground">{stack.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription className="text-muted-foreground">
+                    {stack.description}
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
