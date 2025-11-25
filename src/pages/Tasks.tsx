@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +28,7 @@ import { format } from "date-fns";
 import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 
-export default function Tasks() {
+function Tasks() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [newTask, setNewTask] = useState({
@@ -257,5 +258,13 @@ export default function Tasks() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function TasksPage() {
+  return (
+    <DashboardLayout>
+      <Tasks />
+    </DashboardLayout>
   );
 }

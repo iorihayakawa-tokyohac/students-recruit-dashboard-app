@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
-export default function Companies() {
+function Companies() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -293,5 +294,13 @@ export default function Companies() {
         </Table>
       </div>
     </div>
+  );
+}
+
+export default function CompaniesPage() {
+  return (
+    <DashboardLayout>
+      <Companies />
+    </DashboardLayout>
   );
 }

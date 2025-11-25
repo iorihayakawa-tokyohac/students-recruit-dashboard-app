@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ const toDateTimeValue = (value?: Date | string | null) => {
   return format(date, "yyyy-MM-dd'T'HH:mm");
 };
 
-export default function Events() {
+function Events() {
   const [editingEventId, setEditingEventId] = useState<number | null>(null);
   const [form, setForm] = useState({
     title: "",
@@ -225,16 +226,16 @@ export default function Events() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">企業（任意）</Label>
+                <Label className="text-foreground">企業(任意)</Label>
                 <Select
-                  value={form.companyId ? String(form.companyId) : ""}
-                  onValueChange={(value) => setForm({ ...form, companyId: value ? Number(value) : undefined })}
+                  value={form.companyId ? String(form.companyId) : "none"}
+                  onValueChange={(value) => setForm({ ...form, companyId: value === "none" ? undefined : Number(value) })}
                 >
                   <SelectTrigger className="bg-background text-foreground">
                     <SelectValue placeholder="紐づけなし" />
                   </SelectTrigger>
                   <SelectContent className="bg-popover text-popover-foreground">
-                    <SelectItem value="">紐づけなし</SelectItem>
+                    <SelectItem value="none">紐づけなし</SelectItem>
                     {companies?.map((company) => (
                       <SelectItem key={company.id} value={String(company.id)}>{company.name}</SelectItem>
                     ))}
@@ -449,5 +450,13 @@ export default function Events() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function EventsPage() {
+  return (
+    <DashboardLayout>
+      <Events />
+    </DashboardLayout>
   );
 }

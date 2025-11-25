@@ -1,6 +1,6 @@
 import { getLoginUrl } from "@/const";
-import { auth } from "@/lib/firebase";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { getFirebaseAuth } from "@/lib/firebase";
+import { onAuthStateChanged, signOut, type Unsubscribe, type User } from "firebase/auth";
 import { useEffect, useState } from "react";
 
 type UseAuthOptions = {
@@ -17,44 +17,54 @@ export function useAuth(options?: UseAuthOptions) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (currentUser) => {
-        if (currentUser) {
-          try {
-            const idToken = await currentUser.getIdToken();
-            const res = await fetch("/api/auth/firebase-session", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ idToken }),
-            });
-            if (!res.ok) {
-              const errorText = await res.text();
-              console.error("[Auth] Failed to create session cookie:", res.status, errorText);
-              throw new Error(`Failed to create session cookie: ${res.status} ${errorText}`);
+    let unsubscribe: Unsubscribe | undefined;
+
+    try {
+      const auth = getFirebaseAuth();
+      unsubscribe = onAuthStateChanged(
+        auth,
+        async (currentUser) => {
+          if (currentUser) {
+            try {
+              const idToken = await currentUser.getIdToken();
+              const res = await fetch("/api/auth/firebase-session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ idToken }),
+              });
+              if (!res.ok) {
+                const errorText = await res.text();
+                console.error("[Auth] Failed to create session cookie:", res.status, errorText);
+                throw new Error(`Failed to create session cookie: ${res.status} ${errorText}`);
+              }
+              setUser(currentUser);
+            } catch (err) {
+              console.error("[Auth] Session creation failed:", err);
+              setError(err as Error);
+              setUser(null);
             }
-            setUser(currentUser);
-          } catch (err) {
-            console.error("[Auth] Session creation failed:", err);
-            setError(err as Error);
+          } else {
             setUser(null);
           }
-        } else {
-          setUser(null);
+          setLoading(false);
+        },
+        (err) => {
+          setError(err);
+          setLoading(false);
         }
-        setLoading(false);
-      },
-      (err) => {
-        setError(err);
-        setLoading(false);
-      }
-    );
+      );
+    } catch (err) {
+      setError(err as Error);
+      setLoading(false);
+      return;
+    }
 
-    return () => unsubscribe();
+    return () => unsubscribe?.();
   }, []);
 
   const logout = async () => {
     try {
+      const auth = getFirebaseAuth();
       await signOut(auth);
     } catch (err) {
       console.error("Logout failed", err);

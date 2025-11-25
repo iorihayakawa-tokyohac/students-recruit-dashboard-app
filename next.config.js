@@ -4,4 +4,4 @@ const nextConfig = {
   // API Routesの書き換えなどが必要ならここに記述
 };
 
-module.exports = nextConfig;
+export default nextConfig;

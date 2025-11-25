@@ -15,8 +15,9 @@ import {
 } from "lucide-react";
 import { format, isToday, isTomorrow, isPast } from "date-fns";
 import { ja } from "date-fns/locale";
+import DashboardLayout from "@/components/DashboardLayout";
 
-export default function Dashboard() {
+function DashboardContent() {
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery();
   const { data: companies, isLoading: companiesLoading } = trpc.companies.list.useQuery();
   const { data: tasks, isLoading: tasksLoading } = trpc.tasks.list.useQuery();
@@ -198,5 +199,13 @@ export default function Dashboard() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <DashboardLayout>
+      <DashboardContent />
+    </DashboardLayout>
   );
 }
