@@ -63,33 +63,33 @@ export default function Landing() {
   const techStack = [
     {
       icon: Code2,
-      title: "React + TypeScript",
-      description: "モダンなフロントエンド技術で、型安全かつ快適な開発体験を実現。"
+      title: "Next.js 14 + React 19",
+      description: "App RouterとTypeScript 5.9でSSR/ISRを両立し、快適なUXを実現します。"
     },
     {
       icon: Zap,
-      title: "Vite",
-      description: "高速なビルドとホットリロードで、素早くフィードバックを得られます。"
-    },
-    {
-      icon: Layout,
-      title: "Tailwind CSS",
-      description: "ユーティリティファーストなスタイリングで、デザインを柔軟に構築。"
-    },
-    {
-      icon: Cloud,
-      title: "Firebase (Auth / DB)",
-      description: "認証とデータベースをクラウドで運用し、スケールとセキュリティを両立。"
+      title: "tRPC + Express",
+      description: "サーバーとクライアントの型を共有しながら、高速で安全なAPI通信を構築。"
     },
     {
       icon: Database,
-      title: "Drizzle ORM",
-      description: "型安全なデータベースアクセスで、スキーマ変更にも強い設計。"
+      title: "Drizzle ORM + MySQL",
+      description: "スキーマ定義とマイグレーションをコードで管理し、堅牢なデータ永続化を実現。"
+    },
+    {
+      icon: Cloud,
+      title: "Firebase (Client / Admin)",
+      description: "認証と権限管理をクラウドで一元化し、クライアントとサーバー両方から安全に利用。"
+    },
+    {
+      icon: Layout,
+      title: "Tailwind CSS + shadcn",
+      description: "ユーティリティファーストなスタイリングとUIキットで一貫したデザインを高速構築。"
     },
     {
       icon: Rocket,
-      title: "Vercel",
-      description: "グローバルエッジネットワークでフロントエンドを高速ホスティング。"
+      title: "Vitest + 自動テスト",
+      description: "軽量で高速なテストランナーにより、リファクタリング後も信頼性を担保します。"
     }
   ];
 

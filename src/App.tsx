@@ -6,15 +6,15 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Landing from "./pages/Landing";
-import Dashboard from "./pages/Dashboard";
-import Companies from "./pages/Companies";
+import Dashboard from "./pages/dashboard";
+import Companies from "./pages/companies";
 import CompanyDetail from "./pages/CompanyDetail";
-import Tasks from "./pages/Tasks";
+import Tasks from "./pages/tasks";
 import { SignInPage, SignUpPage } from "./pages/Auth";
 import CompanyResearch from "./pages/CompanyResearch";
 import CompanyResearchDetail from "./pages/CompanyResearchDetail";
 import CompanyResearchWizard from "./pages/CompanyResearchWizard";
-import Events from "./pages/Events";
+import Events from "./pages/events";
 
 function Router() {
   return (
