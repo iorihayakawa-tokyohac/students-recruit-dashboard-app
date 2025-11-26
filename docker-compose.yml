@@ -17,6 +17,9 @@ services:
     environment:
       - DATABASE_URL=mysql://user:password@db:3306/recruit_dashboard
       - NODE_ENV=production
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/firebase-admin.json
+    volumes:
+      - ./recruit-dashboard-f952b-firebase-adminsdk-fbsvc-02af26d490.json:/app/credentials/firebase-admin.json:ro
     depends_on:
       db:
         condition: service_healthy

@@ -6,7 +6,8 @@ ENV PNPM_HOME="/pnpm" \
     PATH="$PNPM_HOME:$PATH" \
     NPM_CONFIG_FETCH_RETRIES=5 \
     NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
-    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
+    TZ=Asia/Tokyo
 
 RUN mkdir -p /pnpm/store \
   && npm install -g pnpm@${PNPM_VERSION} \
@@ -56,6 +57,9 @@ COPY --from=build /app/drizzle.config.ts /app/drizzle.config.ts
 COPY --from=build /app/.env /app/.env
 COPY --from=build /app/.env.local /app/.env.local
 COPY --from=build /app/next.config.js /app/next.config.js
+
+# Create credentials directory
+RUN mkdir -p /app/credentials
 
 ENV NODE_ENV=production
 ENV PORT=3000
