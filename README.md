@@ -69,6 +69,41 @@ FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=              # \n を改行に展開
 
+### Firebase Admin SDK の認証エラー (invalid_grant) と対処
+
+Firebase の管理 SDK で以下のようなエラーが出ることがあります:
+
+```
+Credential implementation provided to initializeApp() ... failed to fetch a valid Google OAuth2 access token: "invalid_grant: Invalid JWT: Token must be a short-lived token (60 minutes) and in a reasonable timeframe. Check your iat and exp values in the JWT claim."
+```
+
+主な原因と対応:
+
+- サーバ / コンテナの時刻がずれている（最も多い原因）
+   - コンテナ内の時刻がホストとずれていると、JWT の iat/exp が "合理的な時間" と見なされず失敗します。
+   - コンテナで確認するコマンド例:
+      - Docker Compose の場合:
+         ```sh
+         docker compose exec app date
+         ```
+      - Podman の場合:
+         ```sh
+         podman exec -it <app-container> date
+         ```
+
+- サービスアカウントのキーが無効化/ローテーションされている
+   - Google Cloud Console > IAM & Admin > Service Accounts にアクセスし、対象サービスアカウントのキーが有効か確認してください。
+   - キーがない、あるいは削除/ローテーションされた場合は新しいキーを生成し、コンテナに配置（または `FIREBASE_ADMIN_CREDENTIALS` に JSON を設定）してください。
+
+- JSON のフォーマット/改行が壊れている
+   - 環境変数に `FIREBASE_PRIVATE_KEY` を直接セットする場合は `\n` を改行に展開する必要があります。
+   - `FIREBASE_ADMIN_CREDENTIALS` を使う場合は JSON が正しくエンコードされているか確認してください。
+
+セキュリティ注意:
+- サービスアカウント JSON は機密情報です。リポジトリに置かないでください。既に公開してしまった場合はすぐにキーを削除・再生成してください。
+
+README 内にもトラブルシュートのログ出力を追加してあるので、initialize 時に出るログを見ればサーバー時刻や環境の手掛かりが得られます。
+
 # ストレージプロキシ
 BUILT_IN_FORGE_API_URL=
 BUILT_IN_FORGE_API_KEY=

@@ -187,17 +187,25 @@ function Events() {
   const eventsList = events ?? [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <CalendarClock className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">リマインダー・予定管理</h1>
-          <p className="text-sm text-muted-foreground">ES締切、面接日時、説明会などの予定をまとめて管理します</p>
-        </div>
+    <div className="relative -m-4 bg-gradient-to-br from-primary/10 via-background to-background p-4 md:p-6 lg:p-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute right-[-8%] top-[-10%] h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute left-[-12%] bottom-[-20%] h-80 w-80 rounded-full bg-purple-400/10 blur-3xl" />
       </div>
+      <div className="relative mx-auto max-w-7xl space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs text-muted-foreground backdrop-blur w-fit">
+            <CalendarClock className="h-4 w-4 text-primary" />
+            <span>リマインダー</span>
+          </div>
+          <div>
+            <h1 className="text-3xl font-semibold text-foreground">リマインダー・予定管理</h1>
+            <p className="text-sm text-muted-foreground">ES締切、面接日時、説明会などの予定をまとめて管理します。</p>
+          </div>
+        </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2 border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
           <CardHeader>
             <CardTitle className="text-foreground">{editingEventId ? "イベントを編集" : "イベントを登録"}</CardTitle>
           </CardHeader>
@@ -335,7 +343,7 @@ function Events() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <BellRing className="h-5 w-5 text-primary" />
@@ -374,7 +382,7 @@ function Events() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <CalendarClock className="h-5 w-5 text-primary" />
@@ -450,6 +458,7 @@ function Events() {
         </CardContent>
       </Card>
     </div>
+  </div>
   );
 }
 

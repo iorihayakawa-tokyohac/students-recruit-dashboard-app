@@ -199,7 +199,17 @@ export default function CompanyResearchWizard() {
     return missing;
   };
 
-  const selectedCompanyId = form.watch("companyId") || noneOption;
+  // Avoid calling form.watch repeatedly with a varying number of calls
+  // (watching each field inside the render can change the number of internal
+  // hooks between renders and throw the React error: "Rendered more hooks
+  // than during the previous render").
+  //
+  // Use a single array watch for the common top-level fields and another
+  // single watch for the fields inside the current section so the number
+  // of internal watch-hook calls remains stable between renders.
+  const [watchedCompanyName, watchedCompanyId, watchedStatus] =
+    form.watch(["companyName", "companyId", "status"]);
+  const selectedCompanyId = watchedCompanyId || noneOption;
 
   const handleSave = async (asCompleted: boolean) => {
     const values = form.getValues();
@@ -261,28 +271,33 @@ export default function CompanyResearchWizard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(isEdit ? `/research/${researchId}` : "/research")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1">
-          <p className="text-sm font-medium text-primary">企業研究ウィザード</p>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                {isEdit ? "企業研究を編集" : "企業研究を作成"}
-              </h1>
-              <p className="text-muted-foreground text-sm mt-2">
-                セクションごとに回答して、自分専用の企業研究ノートを完成させましょう。
-              </p>
+    <div className="relative -m-4 bg-gradient-to-br from-primary/10 via-background to-background p-4 md:p-6 lg:p-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute right-[-8%] top-[-10%] h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute left-[-12%] bottom-[-20%] h-80 w-80 rounded-full bg-purple-400/10 blur-3xl" />
+      </div>
+      <div className="relative space-y-6">
+        <div className="flex items-start gap-4">
+          <Button variant="ghost" size="icon" onClick={() => setLocation(isEdit ? `/research/${researchId}` : "/research")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-primary">企業研究ウィザード</p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                  {isEdit ? "企業研究を編集" : "企業研究を作成"}
+                </h1>
+                <p className="text-muted-foreground text-sm mt-2">
+                  セクションごとに回答して、自分専用の企業研究ノートを完成させましょう。
+                </p>
+              </div>
+              <CompanyResearchStatusBadge status={watchedStatus} />
             </div>
-            <CompanyResearchStatusBadge status={form.watch("status")} />
           </div>
         </div>
-      </div>
 
-      <Card>
+      <Card className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
         <CardHeader>
           <CardTitle className="text-lg text-foreground">企業情報</CardTitle>
         </CardHeader>
@@ -293,7 +308,7 @@ export default function CompanyResearchWizard() {
                 企業名 <span className="text-destructive">*</span>
               </Label>
               <Input
-                value={form.watch("companyName")}
+                value={watchedCompanyName ?? ""}
                 onChange={(e) => form.setValue("companyName", e.target.value)}
                 placeholder="企業名を入力"
                 className="bg-background text-foreground"
@@ -326,7 +341,7 @@ export default function CompanyResearchWizard() {
               </Select>
             </div>
           </div>
-          {!form.watch("companyId") && (
+          {!watchedCompanyId && (
             <div className="flex items-center gap-3 rounded-lg border border-dashed border-border p-3">
               <Switch checked={registerCompany} onCheckedChange={setRegisterCompany} id="registerCompany" />
               <div className="flex flex-col">
@@ -342,7 +357,7 @@ export default function CompanyResearchWizard() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
         <CardHeader className="space-y-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-foreground">{currentSection.title}</CardTitle>
@@ -354,20 +369,29 @@ export default function CompanyResearchWizard() {
           <Progress value={progressValue} className="h-2" />
         </CardHeader>
         <CardContent className="space-y-6">
-          {currentSection.fields.map((field) => (
+          {(() => {
+            // create a stable array of field names and watch them in a single
+            // call to avoid variable hook counts when iterating over fields
+            // (some sections have different counts which previously caused
+            // the "rendered more hooks" error)
+            const fieldNames = currentSection.fields.map((f) => f.name as keyof FormValues);
+            const fieldValues = form.watch(fieldNames as any) as Array<string | undefined> | undefined;
+
+            return currentSection.fields.map((field, idx) => (
             <div key={field.name} className="space-y-2">
               <Label className="text-foreground">
                 {field.label} {field.required && <span className="text-destructive">*</span>}
               </Label>
-              <Textarea
-                value={form.watch(field.name as keyof FormValues) as string}
-                onChange={(e) => form.setValue(field.name as keyof FormValues, e.target.value)}
-                placeholder={field.placeholder}
-                rows={4}
-                className="bg-background text-foreground"
-              />
+                  <Textarea
+                    value={(fieldValues?.[idx] ?? form.getValues(field.name as keyof FormValues) ?? "") as string}
+                    onChange={(e) => form.setValue(field.name as keyof FormValues, e.target.value)}
+                    placeholder={field.placeholder}
+                    rows={4}
+                    className="bg-background text-foreground"
+                  />
             </div>
-          ))}
+            ));
+          })()}
           <div className="flex items-center justify-between">
             <Button
               variant="outline"
@@ -412,6 +436,7 @@ export default function CompanyResearchWizard() {
             完了として保存
           </Button>
         </div>
+      </div>
       </div>
     </div>
   );
