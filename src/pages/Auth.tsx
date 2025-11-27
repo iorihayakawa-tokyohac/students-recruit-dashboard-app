@@ -277,7 +277,7 @@ function AuthPage({ mode }: { mode: AuthMode }) {
         <div className="bg-white/70 backdrop-blur-md rounded-3xl border border-white/60 shadow-2xl p-8 md:p-10 flex flex-col justify-between space-y-8">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-muted-foreground">
-              Recruit Dashboard
+              StepNavi
             </p>
             <h3 className="mt-4 text-3xl font-bold text-foreground">
               就活の情報をすべてここに。

@@ -1,6 +1,6 @@
-# Recruit Dashboard
+# StepNavi
 
-Next.js 14 + TypeScript で構成されたリクルート向けダッシュボード。Firebase 認証、TRPC ベースのサーバー、Drizzle（MySQL）によるデータ永続化を利用します。UI は shadcn/radix ベースのコンポーネント群を同梱。
+StepNavi は Next.js 14 + TypeScript で構成されたリクルート向けダッシュボード。Firebase 認証、TRPC ベースのサーバー、Drizzle（MySQL）によるデータ永続化を利用します。UI は shadcn/radix ベースのコンポーネント群を同梱。
 
 ## 技術スタック
 - Next.js 14 / React 19 / TypeScript 5.9

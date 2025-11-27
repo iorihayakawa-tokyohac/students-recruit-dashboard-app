@@ -1,173 +1,414 @@
-import { eq, and, desc, sql, like, or, isNotNull, gte, lte, inArray, asc, SQL } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-import {
+import type {
   InsertUser,
-  users,
-  companies,
-  tasks,
-  notes,
+  User,
   InsertCompany,
+  Company,
   InsertTask,
+  Task,
   InsertNote,
-  companyResearches,
+  Note,
   InsertCompanyResearch,
   CompanyResearch,
-  events,
   InsertEvent,
-  notificationPreferences,
+  Event,
   InsertNotificationPreference,
-  selectionSteps,
+  NotificationPreference,
   InsertSelectionStep,
   SelectionStep,
-  NotificationPreference,
-  students,
   InsertStudent,
   Student,
-  roadmapDefinitions,
-  InsertRoadmapDefinition,
   RoadmapDefinition,
-  roadmapSteps,
-  InsertRoadmapStep,
   RoadmapStep,
-  roadmapInstances,
-  InsertRoadmapInstance,
   RoadmapInstance,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { getFirebaseAdminApp } from "./_core/firebaseAdmin";
+import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+type FirestoreDate = Date | Timestamp | FieldValue | null | undefined;
 
-// Support both DATABASE_URL and Vercel-style MYSQL* envs.
-function resolveDatabaseUrl(): string {
-  const direct = process.env.DATABASE_URL?.trim();
-  if (direct) return direct;
+type CollectionName =
+  | "users"
+  | "companies"
+  | "tasks"
+  | "notes"
+  | "companyResearches"
+  | "events"
+  | "notificationPreferences"
+  | "selectionSteps"
+  | "students"
+  | "roadmapDefinitions"
+  | "roadmapSteps"
+  | "roadmapInstances";
 
-  const host = process.env.MYSQLHOST || process.env.MYSQL_HOST;
-  const user = process.env.MYSQLUSER || process.env.MYSQL_USER;
-  const password = process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD;
-  const database = process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE;
-  const port = process.env.MYSQLPORT || process.env.MYSQL_PORT || "3306";
-
-  if (host && user && password && database) {
-    return `mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
-  }
-
-  return "";
+function db() {
+  return getFirestore(getFirebaseAdminApp());
 }
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
-export async function getDb() {
-  if (_db) return _db;
-
-  const databaseUrl = resolveDatabaseUrl();
-  if (!databaseUrl) {
-    console.warn("[Database] DATABASE_URL / MYSQL* env vars not set");
-    return null;
-  }
-
-  try {
-    const hostname = new URL(databaseUrl).hostname;
-    if (ENV.isProduction && ["127.0.0.1", "localhost"].includes(hostname)) {
-      console.error("[Database] Refusing to connect to local MySQL in production. Set remote DATABASE_URL / MYSQL* vars.");
-      return null;
-    }
-    _db = drizzle(databaseUrl);
-  } catch (error) {
-    console.warn("[Database] Failed to connect:", error);
-    _db = null;
-  }
-
-  return _db;
+function toDate(value: FirestoreDate): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value instanceof Timestamp) return value.toDate();
+  if (typeof (value as any)?.toDate === "function") return (value as any).toDate();
+  const parsed = new Date(value as any);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function normalizeDoc<T extends { id?: number; createdAt?: Date; updatedAt?: Date }>(
+  doc: FirebaseFirestore.DocumentSnapshot,
+): T {
+  const data = doc.data() ?? {};
+  const idValue = (data as any).id ?? parseInt(doc.id, 10);
+  return {
+    ...(data as any),
+    id: Number.isFinite(idValue) ? Number(idValue) : undefined,
+    createdAt: toDate((data as any).createdAt) ?? new Date(),
+    updatedAt: toDate((data as any).updatedAt) ?? new Date(),
+  } as T;
+}
+
+async function nextId(collection: CollectionName): Promise<number> {
+  const countersRef = db().collection("_meta").doc("counters");
+  return db().runTransaction(async tx => {
+    const snap = await tx.get(countersRef);
+    const current = (snap.data()?.[collection] as number | undefined) ?? 0;
+    const next = current + 1;
+    tx.set(countersRef, { [collection]: next }, { merge: true });
+    return next;
+  });
+}
+
+function now() {
+  return new Date();
+}
+
+// Helpers
+async function getDocById<T extends { id?: number }>(collection: CollectionName, id: number | string) {
+  const snap = await db().collection(collection).doc(String(id)).get();
+  if (!snap.exists) return undefined;
+  return normalizeDoc<T>(snap);
+}
+
+async function queryByUser<T extends { id?: number }>(collection: CollectionName, userId: number) {
+  const snap = await db().collection(collection).where("userId", "==", userId).get();
+  return snap.docs.map(doc => normalizeDoc<T>(doc));
+}
+
+async function assertCompanyOwnership(userId: number, companyId: number) {
+  const company = await getDocById<Company>("companies", companyId);
+  if (!company || company.userId !== userId) {
+    throw new Error("Company not found");
+  }
+}
+
+// Users
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
   }
+  const firestore = db();
+  const userRef = firestore.collection("users").doc(user.openId);
   const normalizedEmail = user.email?.trim().toLowerCase();
-  if (normalizedEmail) {
-    user.email = normalizedEmail;
+
+  const existingSnap = await userRef.get();
+  let existing = existingSnap.exists ? (normalizeDoc<User>(existingSnap) as User) : null;
+  let id = existing?.id;
+
+  if (!id) {
+    id = await nextId("users");
   }
 
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  const nowValue = now();
+  const values: Partial<User> = {
+    id,
+    openId: user.openId,
+    name: user.name ?? existing?.name ?? null,
+    email: normalizedEmail ?? existing?.email ?? null,
+    loginMethod: user.loginMethod ?? existing?.loginMethod ?? null,
+    role: user.role ?? existing?.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user"),
+    lastSignedIn: user.lastSignedIn ?? existing?.lastSignedIn ?? nowValue,
+    createdAt: existing?.createdAt ?? nowValue,
+    updatedAt: nowValue,
+  };
 
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  await userRef.set(values, { merge: true });
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  const snap = await db().collection("users").doc(openId).get();
+  if (!snap.exists) return undefined;
+  return normalizeDoc<User>(snap);
 }
 
 export async function getUserByEmail(email: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user by email: database not available");
-    return undefined;
-  }
-
   const normalizedEmail = email.trim().toLowerCase();
-  const result = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  const snap = await db().collection("users").where("email", "==", normalizedEmail).limit(1).get();
+  const doc = snap.docs[0];
+  return doc ? normalizeDoc<User>(doc) : undefined;
 }
 
+// Companies
+export async function getCompaniesByUserId(userId: number) {
+  const companies = await queryByUser<Company>("companies", userId);
+  return companies.sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
+}
+
+export async function getCompanyById(companyId: number, userId: number) {
+  const company = await getDocById<Company>("companies", companyId);
+  if (!company || company.userId !== userId) return undefined;
+  return company;
+}
+
+export async function createCompany(data: InsertCompany) {
+  const firestore = db();
+  const id = await nextId("companies");
+  const nowValue = now();
+  const payload: Company = {
+    ...data,
+    id,
+    status: data.status ?? "未エントリー",
+    priority: data.priority ?? "B",
+    createdAt: nowValue,
+    updatedAt: nowValue,
+  } as Company;
+  await firestore.collection("companies").doc(String(id)).set(payload);
+  return { insertId: id, result: payload };
+}
+
+export async function updateCompany(companyId: number, userId: number, data: Partial<InsertCompany>) {
+  await assertCompanyOwnership(userId, companyId);
+  await db()
+    .collection("companies")
+    .doc(String(companyId))
+    .set({ ...data, updatedAt: now() }, { merge: true });
+}
+
+export async function deleteCompany(companyId: number, userId: number) {
+  await assertCompanyOwnership(userId, companyId);
+  const firestore = db();
+
+  const batch = firestore.batch();
+  const eventsSnap = await firestore
+    .collection("events")
+    .where("companyId", "==", companyId)
+    .where("userId", "==", userId)
+    .get();
+  eventsSnap.forEach(doc => batch.update(doc.ref, { companyId: null, updatedAt: now() }));
+
+  const stepsSnap = await firestore
+    .collection("selectionSteps")
+    .where("companyId", "==", companyId)
+    .where("userId", "==", userId)
+    .get();
+  stepsSnap.forEach(doc => batch.delete(doc.ref));
+
+  batch.delete(firestore.collection("companies").doc(String(companyId)));
+  await batch.commit();
+}
+
+// Tasks
+export async function getTasksByUserId(userId: number) {
+  const records = await queryByUser<Task>("tasks", userId);
+  return records.sort((a, b) => (toDate(b.dueDate)?.getTime() || 0) - (toDate(a.dueDate)?.getTime() || 0));
+}
+
+export async function getTaskById(taskId: number, userId: number) {
+  const task = await getDocById<Task>("tasks", taskId);
+  if (!task || task.userId !== userId) return undefined;
+  return task;
+}
+
+export async function createTask(data: InsertTask) {
+  const firestore = db();
+  const id = await nextId("tasks");
+  const nowValue = now();
+  const payload: Task = { ...data, status: data.status ?? "open", id, createdAt: nowValue, updatedAt: nowValue } as Task;
+  await firestore.collection("tasks").doc(String(id)).set(payload);
+  return payload;
+}
+
+export async function updateTask(taskId: number, userId: number, data: Partial<InsertTask>) {
+  const existing = await getTaskById(taskId, userId);
+  if (!existing) throw new Error("Task not found");
+  await db().collection("tasks").doc(String(taskId)).set({ ...data, updatedAt: now() }, { merge: true });
+}
+
+export async function deleteTask(taskId: number, userId: number) {
+  const existing = await getTaskById(taskId, userId);
+  if (!existing) throw new Error("Task not found");
+  await db().collection("tasks").doc(String(taskId)).delete();
+}
+
+// Events
+export async function getEventById(eventId: number, userId: number) {
+  const event = await getDocById<Event>("events", eventId);
+  if (!event || event.userId !== userId) return undefined;
+  return event;
+}
+
+export async function listEventsInRange(
+  userId: number,
+  params: { from: Date; to: Date; companyId?: number; types?: InsertEvent["type"][] },
+) {
+  const events = await queryByUser<Event>("events", userId);
+  return events
+    .filter(evt => {
+      const startAt = toDate(evt.startAt);
+      if (!startAt) return false;
+      if (startAt < params.from || startAt > params.to) return false;
+      if (params.companyId && evt.companyId !== params.companyId) return false;
+      if (params.types && params.types.length > 0 && !params.types.includes(evt.type)) return false;
+      return true;
+    })
+    .sort((a, b) => (toDate(a.startAt)?.getTime() || 0) - (toDate(b.startAt)?.getTime() || 0));
+}
+
+export async function getUpcomingEvents(userId: number, days: number = 7) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + days);
+  end.setHours(23, 59, 59, 999);
+  return listEventsInRange(userId, { from: start, to: end });
+}
+
+export async function createEvent(data: InsertEvent) {
+  if (data.companyId) {
+    await assertCompanyOwnership(data.userId, data.companyId);
+  }
+  const firestore = db();
+  const id = await nextId("events");
+  const nowValue = now();
+  const payload: Event = {
+    ...data,
+    id,
+    remindBeforeDays: data.remindBeforeDays ?? 1,
+    remindOnDay: data.remindOnDay ?? true,
+    createdAt: nowValue,
+    updatedAt: nowValue,
+  } as Event;
+  await firestore.collection("events").doc(String(id)).set(payload);
+  return { insertId: id, result: payload };
+}
+
+export async function updateEvent(eventId: number, userId: number, data: Partial<InsertEvent>) {
+  const current = await getEventById(eventId, userId);
+  if (!current) throw new Error("Event not found");
+  if (data.companyId) {
+    await assertCompanyOwnership(userId, data.companyId);
+  }
+  await db().collection("events").doc(String(eventId)).set({ ...data, updatedAt: now() }, { merge: true });
+}
+
+export async function deleteEvent(eventId: number, userId: number) {
+  const current = await getEventById(eventId, userId);
+  if (!current) throw new Error("Event not found");
+  await db().collection("events").doc(String(eventId)).delete();
+}
+
+// Notes
+export async function getNotesByCompanyId(companyId: number, userId: number) {
+  const records = await queryByUser<Note>("notes", userId);
+  return records
+    .filter(note => note.companyId === companyId)
+    .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+}
+
+export async function getNoteById(noteId: number, userId: number) {
+  const note = await getDocById<Note>("notes", noteId);
+  if (!note || note.userId !== userId) return undefined;
+  return note;
+}
+
+export async function createNote(data: InsertNote) {
+  const firestore = db();
+  const id = await nextId("notes");
+  const nowValue = now();
+  const payload: Note = { ...data, id, createdAt: nowValue, updatedAt: nowValue, type: data.type ?? "other" } as Note;
+  await firestore.collection("notes").doc(String(id)).set(payload);
+  return payload;
+}
+
+export async function updateNote(noteId: number, userId: number, data: Partial<InsertNote>) {
+  const existing = await getNoteById(noteId, userId);
+  if (!existing) throw new Error("Note not found");
+  await db().collection("notes").doc(String(noteId)).set({ ...data, updatedAt: now() }, { merge: true });
+}
+
+export async function deleteNote(noteId: number, userId: number) {
+  const existing = await getNoteById(noteId, userId);
+  if (!existing) throw new Error("Note not found");
+  await db().collection("notes").doc(String(noteId)).delete();
+}
+
+// Notification Preferences
+export async function getNotificationPreference(userId: number): Promise<NotificationPreference> {
+  const snap = await db().collection("notificationPreferences").doc(String(userId)).get();
+  if (!snap.exists) {
+    return { userId, emailEnabled: false, overrideEmail: null, createdAt: now(), updatedAt: now() } as NotificationPreference;
+  }
+  return normalizeDoc<NotificationPreference>(snap);
+}
+
+export async function upsertNotificationPreference(userId: number, data: Partial<InsertNotificationPreference>) {
+  const nowValue = now();
+  const values: InsertNotificationPreference = {
+    userId,
+    emailEnabled: data.emailEnabled ?? false,
+    overrideEmail: data.overrideEmail ?? null,
+  };
+  await db()
+    .collection("notificationPreferences")
+    .doc(String(userId))
+    .set({ ...values, updatedAt: nowValue, createdAt: nowValue }, { merge: true });
+}
+
+// Selection steps
+export async function listSelectionStepsByCompany(companyId: number, userId: number) {
+  await assertCompanyOwnership(userId, companyId);
+  const records = await queryByUser<SelectionStep>("selectionSteps", userId);
+  return records
+    .filter(step => step.companyId === companyId)
+    .sort((a, b) => (a.order - b.order) || ((a.id ?? 0) - (b.id ?? 0)));
+}
+
+export async function createSelectionStep(data: Omit<InsertSelectionStep, "order"> & { order?: number }) {
+  await assertCompanyOwnership(data.userId, data.companyId);
+  const firestore = db();
+  const records = await listSelectionStepsByCompany(data.companyId, data.userId);
+  const orderValue = data.order ?? ((records[records.length - 1]?.order ?? 0) + 1);
+  const id = await nextId("selectionSteps");
+  const nowValue = now();
+  const payload: SelectionStep = {
+    ...data,
+    order: orderValue,
+    status: data.status ?? "not_started",
+    id,
+    createdAt: nowValue,
+    updatedAt: nowValue,
+  } as SelectionStep;
+  await firestore.collection("selectionSteps").doc(String(id)).set(payload);
+  await recomputeCompanyProgress(data.companyId, data.userId);
+  return payload;
+}
+
+export async function updateSelectionStep(stepId: number, userId: number, data: Partial<InsertSelectionStep>) {
+  const current = await getDocById<SelectionStep>("selectionSteps", stepId);
+  if (!current || current.userId !== userId) throw new Error("Selection step not found");
+  const targetCompanyId = data.companyId ?? current.companyId;
+  await assertCompanyOwnership(userId, targetCompanyId);
+  await db().collection("selectionSteps").doc(String(stepId)).set({ ...data, updatedAt: now() }, { merge: true });
+  await recomputeCompanyProgress(targetCompanyId, userId);
+}
+
+export async function deleteSelectionStep(stepId: number, userId: number) {
+  const existing = await getDocById<SelectionStep>("selectionSteps", stepId);
+  if (!existing || existing.userId !== userId) return;
+  await db().collection("selectionSteps").doc(String(stepId)).delete();
+  await recomputeCompanyProgress(existing.companyId, userId);
+}
+
+// Roadmap helpers
 const defaultStudentRoadmapDefinition: RoadmapDefinition = {
   id: 1,
   key: "student_support_default",
@@ -295,289 +536,9 @@ function enrichStep(step: RoadmapStep): ParsedRoadmapStep {
   };
 }
 
-async function assertCompanyOwnership(userId: number, companyId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const company = await db
-    .select({ id: companies.id })
-    .from(companies)
-    .where(and(eq(companies.id, companyId), eq(companies.userId, userId)))
-    .limit(1);
-  if (!company.length) {
-    throw new Error("Company not found");
-  }
-}
-
-// 企業管理関連のクエリヘルパー
-
-// 企業関連
-export async function getCompaniesByUserId(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(companies).where(eq(companies.userId, userId)).orderBy(desc(companies.updatedAt));
-}
-
-export async function getCompanyById(companyId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(companies).where(and(eq(companies.id, companyId), eq(companies.userId, userId))).limit(1);
-  return result[0];
-}
-
-export async function createCompany(data: InsertCompany) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(companies).values(data);
-  const insertId = Array.isArray(result) ? (result[0] as any)?.insertId : (result as any)?.insertId;
-  return { insertId, result };
-}
-
-export async function updateCompany(companyId: number, userId: number, data: Partial<InsertCompany>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(companies).set(data).where(and(eq(companies.id, companyId), eq(companies.userId, userId)));
-}
-
-export async function deleteCompany(companyId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(events).set({ companyId: null }).where(and(eq(events.companyId, companyId), eq(events.userId, userId)));
-  await db.delete(selectionSteps).where(and(eq(selectionSteps.companyId, companyId), eq(selectionSteps.userId, userId)));
-  await db.delete(companies).where(and(eq(companies.id, companyId), eq(companies.userId, userId)));
-}
-
-// タスク関連
-export async function getTasksByUserId(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(tasks).where(eq(tasks.userId, userId)).orderBy(desc(tasks.dueDate));
-}
-
-export async function getTaskById(taskId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, userId))).limit(1);
-  return result[0];
-}
-
-export async function createTask(data: InsertTask) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(tasks).values(data);
-  return result;
-}
-
-export async function updateTask(taskId: number, userId: number, data: Partial<InsertTask>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(tasks).set(data).where(and(eq(tasks.id, taskId), eq(tasks.userId, userId)));
-}
-
-export async function deleteTask(taskId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, userId)));
-}
-
-// イベント（リマインダー）関連
-export async function getEventById(eventId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.userId, userId))).limit(1);
-  return result[0];
-}
-
-export async function listEventsInRange(
-  userId: number,
-  params: { from: Date; to: Date; companyId?: number; types?: InsertEvent["type"][] },
-) {
-  const db = await getDb();
-  if (!db) return [];
-
-  const filters = [eq(events.userId, userId), gte(events.startAt, params.from), lte(events.startAt, params.to)];
-  if (params.companyId) {
-    filters.push(eq(events.companyId, params.companyId));
-  }
-  if (params.types && params.types.length > 0) {
-    filters.push(inArray(events.type, params.types));
-  }
-
-  return db
-    .select()
-    .from(events)
-    .where(and(...filters))
-    .orderBy(asc(events.startAt));
-}
-
-export async function getUpcomingEvents(userId: number, days: number = 7) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(start);
-  end.setDate(end.getDate() + days);
-  end.setHours(23, 59, 59, 999);
-
-  return listEventsInRange(userId, { from: start, to: end });
-}
-
-export async function createEvent(data: InsertEvent) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  if (data.companyId) {
-    await assertCompanyOwnership(data.userId, data.companyId);
-  }
-  const result = await db.insert(events).values(data);
-  const insertId = Array.isArray(result) ? (result[0] as any)?.insertId : (result as any)?.insertId;
-  return { insertId, result };
-}
-
-export async function updateEvent(eventId: number, userId: number, data: Partial<InsertEvent>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const current = await getEventById(eventId, userId);
-  if (!current) {
-    throw new Error("Event not found");
-  }
-  if (data.companyId) {
-    await assertCompanyOwnership(userId, data.companyId);
-  }
-  await db.update(events).set(data).where(and(eq(events.id, eventId), eq(events.userId, userId)));
-}
-
-export async function deleteEvent(eventId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.delete(events).where(and(eq(events.id, eventId), eq(events.userId, userId)));
-}
-
-// メモ関連
-export async function getNotesByCompanyId(companyId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(notes).where(and(eq(notes.companyId, companyId), eq(notes.userId, userId))).orderBy(desc(notes.createdAt));
-}
-
-export async function getNoteById(noteId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(notes).where(and(eq(notes.id, noteId), eq(notes.userId, userId))).limit(1);
-  return result[0];
-}
-
-export async function createNote(data: InsertNote) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(notes).values(data);
-  return result;
-}
-
-export async function updateNote(noteId: number, userId: number, data: Partial<InsertNote>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(notes).set(data).where(and(eq(notes.id, noteId), eq(notes.userId, userId)));
-}
-
-export async function deleteNote(noteId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.delete(notes).where(and(eq(notes.id, noteId), eq(notes.userId, userId)));
-}
-
-// 通知設定
-export async function getNotificationPreference(userId: number): Promise<NotificationPreference> {
-  const db = await getDb();
-  if (!db) {
-    return { userId, emailEnabled: false, overrideEmail: null, createdAt: new Date(), updatedAt: new Date() };
-  }
-  const pref = await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId)).limit(1);
-  if (pref.length) return pref[0];
-  return { userId, emailEnabled: false, overrideEmail: null, createdAt: new Date(), updatedAt: new Date() };
-}
-
-export async function upsertNotificationPreference(userId: number, data: Partial<InsertNotificationPreference>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const values: InsertNotificationPreference = {
-    userId,
-    emailEnabled: data.emailEnabled ?? false,
-    overrideEmail: data.overrideEmail ?? null,
-  };
-  await db
-    .insert(notificationPreferences)
-    .values(values)
-    .onDuplicateKeyUpdate({
-      set: {
-        emailEnabled: data.emailEnabled ?? values.emailEnabled,
-        overrideEmail: data.overrideEmail ?? values.overrideEmail,
-        updatedAt: new Date(),
-      },
-    });
-}
-
-// 選考ステップ
-export async function listSelectionStepsByCompany(companyId: number, userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  await assertCompanyOwnership(userId, companyId);
-  return db
-    .select()
-    .from(selectionSteps)
-    .where(and(eq(selectionSteps.companyId, companyId), eq(selectionSteps.userId, userId)))
-    .orderBy(asc(selectionSteps.order), asc(selectionSteps.id));
-}
-
-export async function createSelectionStep(data: Omit<InsertSelectionStep, "order"> & { order?: number }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await assertCompanyOwnership(data.userId, data.companyId);
-
-  let orderValue = data.order;
-  if (orderValue === undefined) {
-    const currentMax = await db
-      .select({ max: sql<number>`coalesce(max(${selectionSteps.order}), 0)` })
-      .from(selectionSteps)
-      .where(and(eq(selectionSteps.companyId, data.companyId), eq(selectionSteps.userId, data.userId)))
-      .limit(1);
-    orderValue = (currentMax[0]?.max ?? 0) + 1;
-  }
-
-  const result = await db.insert(selectionSteps).values({ ...data, order: orderValue });
-  await recomputeCompanyProgress(data.companyId, data.userId);
-  return result;
-}
-
-export async function updateSelectionStep(stepId: number, userId: number, data: Partial<InsertSelectionStep>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const current = await db.select().from(selectionSteps).where(and(eq(selectionSteps.id, stepId), eq(selectionSteps.userId, userId))).limit(1);
-  if (!current.length) {
-    throw new Error("Selection step not found");
-  }
-  const currentStep = current[0];
-  const targetCompanyId = data.companyId ?? currentStep.companyId;
-  await assertCompanyOwnership(userId, targetCompanyId);
-
-  await db
-    .update(selectionSteps)
-    .set(data)
-    .where(and(eq(selectionSteps.id, stepId), eq(selectionSteps.userId, userId)));
-
-  await recomputeCompanyProgress(targetCompanyId, userId);
-}
-
-export async function deleteSelectionStep(stepId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const existing = await db.select().from(selectionSteps).where(and(eq(selectionSteps.id, stepId), eq(selectionSteps.userId, userId))).limit(1);
-  if (!existing.length) return;
-  await db.delete(selectionSteps).where(and(eq(selectionSteps.id, stepId), eq(selectionSteps.userId, userId)));
-  await recomputeCompanyProgress(existing[0].companyId, userId);
-}
-
 function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
-  const now = new Date();
-  const definition: RoadmapDefinition = { ...defaultStudentRoadmapDefinition, createdAt: now, updatedAt: now };
+  const nowValue = now();
+  const definition: RoadmapDefinition = { ...defaultStudentRoadmapDefinition, createdAt: nowValue, updatedAt: nowValue };
   const steps = defaultStudentRoadmapSteps.map(enrichStep);
   const tanaka: Student = {
     id: 101,
@@ -587,8 +548,8 @@ function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
     graduationYear: 2026,
     desiredIndustry: "IT / コンサル",
     note: "成長環境を重視。まずはキャリアヒアリングを希望。",
-    createdAt: now,
-    updatedAt: now,
+    createdAt: nowValue,
+    updatedAt: nowValue,
   };
   const sato: Student = {
     id: 102,
@@ -598,8 +559,8 @@ function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
     graduationYear: 2026,
     desiredIndustry: "メーカー / モビリティ",
     note: "プロダクト志向で、実地に近い経験を求めている。",
-    createdAt: now,
-    updatedAt: now,
+    createdAt: nowValue,
+    updatedAt: nowValue,
   };
   const currentStep = steps.find(step => step.order === 4) ?? steps[0];
   const altStep = steps.find(step => step.order === 3) ?? currentStep;
@@ -612,8 +573,8 @@ function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
       userId,
       currentStepId: currentStep?.id ?? null,
       status: "active",
-      createdAt: now,
-      updatedAt: now,
+      createdAt: nowValue,
+      updatedAt: nowValue,
     },
     {
       id: 202,
@@ -623,8 +584,8 @@ function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
       userId,
       currentStepId: altStep?.id ?? null,
       status: "active",
-      createdAt: now,
-      updatedAt: now,
+      createdAt: nowValue,
+      updatedAt: nowValue,
     },
   ];
 
@@ -644,70 +605,40 @@ function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
   });
 }
 
-async function ensureDefaultStudentRoadmap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const existing = await db
-    .select()
-    .from(roadmapDefinitions)
-    .where(eq(roadmapDefinitions.key, defaultStudentRoadmapDefinition.key))
-    .limit(1);
-  let definition = existing[0];
-
-  if (!definition) {
-    await db
-      .insert(roadmapDefinitions)
-      .values({
-        key: defaultStudentRoadmapDefinition.key,
-        title: defaultStudentRoadmapDefinition.title,
-        description: defaultStudentRoadmapDefinition.description,
-        entityType: "student",
-      })
-      .onDuplicateKeyUpdate({
-        set: {
-          title: defaultStudentRoadmapDefinition.title,
-          description: defaultStudentRoadmapDefinition.description,
-          entityType: "student",
-          updatedAt: new Date(),
-        },
-      });
-    const refreshed = await db
-      .select()
-      .from(roadmapDefinitions)
-      .where(eq(roadmapDefinitions.key, defaultStudentRoadmapDefinition.key))
-      .limit(1);
-    definition = refreshed[0] ?? { ...defaultStudentRoadmapDefinition, createdAt: new Date(), updatedAt: new Date() };
+async function ensureDefaultStudentRoadmapFirestore() {
+  const firestore = db();
+  const defRef = firestore.collection("roadmapDefinitions").doc(String(defaultStudentRoadmapDefinition.id));
+  const defSnap = await defRef.get();
+  let definition: RoadmapDefinition;
+  if (!defSnap.exists) {
+    const nowValue = now();
+    definition = { ...defaultStudentRoadmapDefinition, createdAt: nowValue, updatedAt: nowValue };
+    await defRef.set(definition);
+  } else {
+    definition = normalizeDoc<RoadmapDefinition>(defSnap);
   }
 
-  let steps = await db.select().from(roadmapSteps).where(eq(roadmapSteps.roadmapId, definition.id));
-  if (!steps.length) {
-    const payload: InsertRoadmapStep[] = defaultStudentRoadmapSteps.map(step => ({
-      id: step.id,
-      roadmapId: definition.id,
-      order: step.order,
-      title: step.title,
-      description: step.description,
-      taskExamples: step.taskExamples,
-      nextActions: step.nextActions,
-    }));
-    await db.insert(roadmapSteps).values(payload);
-    steps = await db.select().from(roadmapSteps).where(eq(roadmapSteps.roadmapId, definition.id));
+  const stepsSnap = await firestore
+    .collection("roadmapSteps")
+    .where("roadmapId", "==", definition.id)
+    .get();
+  if (stepsSnap.empty) {
+    const batch = firestore.batch();
+    defaultStudentRoadmapSteps.forEach(step => {
+      batch.set(firestore.collection("roadmapSteps").doc(String(step.id)), step);
+    });
+    await batch.commit();
   }
-
-  return {
-    definition,
-    steps: steps.map(enrichStep).sort((a, b) => a.order - b.order || a.id - b.id),
-  };
+  const refreshedStepsSnap = await firestore.collection("roadmapSteps").where("roadmapId", "==", definition.id).get();
+  const steps = refreshedStepsSnap.docs.map(doc => enrichStep(normalizeDoc<RoadmapStep>(doc)));
+  steps.sort((a, b) => a.order - b.order || a.id - b.id);
+  return { definition, steps };
 }
 
-async function seedStudentsIfEmpty(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  userId: number,
-  roadmap: { definition: RoadmapDefinition; steps: ParsedRoadmapStep[] },
-) {
-  const existingCount = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(students)
-    .where(eq(students.userId, userId));
-  if ((existingCount[0]?.count ?? 0) > 0) return;
+async function seedStudentsIfEmpty(userId: number, roadmap: { definition: RoadmapDefinition; steps: ParsedRoadmapStep[] }) {
+  const firestore = db();
+  const existing = await firestore.collection("students").where("userId", "==", userId).limit(1).get();
+  if (!existing.empty) return;
 
   const sampleStudents: InsertStudent[] = [
     {
@@ -728,155 +659,170 @@ async function seedStudentsIfEmpty(
     },
   ];
 
-  await db.insert(students).values(sampleStudents);
-
-  const inserted = await db
-    .select()
-    .from(students)
-    .where(eq(students.userId, userId))
-    .orderBy(asc(students.id))
-    .limit(sampleStudents.length);
+  const batch = firestore.batch();
+  const studentIds: number[] = [];
+  for (const student of sampleStudents) {
+    const id = await nextId("students");
+    studentIds.push(id);
+    const nowValue = now();
+    batch.set(firestore.collection("students").doc(String(id)), {
+      ...student,
+      id,
+      createdAt: nowValue,
+      updatedAt: nowValue,
+    });
+  }
+  await batch.commit();
 
   const defaultStepId = roadmap.steps.find(step => step.order === 4)?.id ?? roadmap.steps[0]?.id ?? null;
   const secondaryStepId = roadmap.steps.find(step => step.order === 3)?.id ?? defaultStepId;
 
-  const instances: InsertRoadmapInstance[] = [];
-  if (inserted[0] && defaultStepId) {
-    instances.push({
+  const instanceBatch = firestore.batch();
+  if (studentIds[0] && defaultStepId) {
+    const id = await nextId("roadmapInstances");
+    instanceBatch.set(firestore.collection("roadmapInstances").doc(String(id)), {
+      id,
       roadmapId: roadmap.definition.id,
       entityType: "student",
-      entityId: inserted[0].id,
+      entityId: studentIds[0],
       userId,
       currentStepId: defaultStepId,
       status: "active",
-    });
+      createdAt: now(),
+      updatedAt: now(),
+    } as RoadmapInstance);
   }
-  if (inserted[1] && secondaryStepId) {
-    instances.push({
+  if (studentIds[1] && secondaryStepId) {
+    const id = await nextId("roadmapInstances");
+    instanceBatch.set(firestore.collection("roadmapInstances").doc(String(id)), {
+      id,
       roadmapId: roadmap.definition.id,
       entityType: "student",
-      entityId: inserted[1].id,
+      entityId: studentIds[1],
       userId,
       currentStepId: secondaryStepId,
       status: "active",
-    });
+      createdAt: now(),
+      updatedAt: now(),
+    } as RoadmapInstance);
   }
-  if (instances.length) {
-    await db.insert(roadmapInstances).values(instances);
-  }
+  await instanceBatch.commit();
 }
 
 async function ensureInstancesForStudents(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   userId: number,
   studentList: Student[],
   roadmap: { definition: RoadmapDefinition; steps: ParsedRoadmapStep[] },
 ) {
+  const firestore = db();
   if (!studentList.length) return [] as RoadmapInstance[];
-
   const ids = studentList.map(student => student.id);
-  const existingInstances = await db
-    .select()
-    .from(roadmapInstances)
-    .where(and(eq(roadmapInstances.entityType, "student"), eq(roadmapInstances.userId, userId), inArray(roadmapInstances.entityId, ids)));
+  const snap = await firestore
+    .collection("roadmapInstances")
+    .where("entityType", "==", "student")
+    .where("userId", "==", userId)
+    .get();
+  const existing = snap.docs.map(doc => normalizeDoc<RoadmapInstance>(doc)).filter(instance => ids.includes(instance.entityId));
 
-  const missingStudents = studentList.filter(student => !existingInstances.some(instance => instance.entityId === student.id));
-  if (missingStudents.length) {
+  const missing = studentList.filter(student => !existing.some(instance => instance.entityId === student.id));
+  if (missing.length) {
     const defaultStepId = roadmap.steps.find(step => step.order === 4)?.id ?? roadmap.steps[0]?.id ?? null;
-    const payload: InsertRoadmapInstance[] = missingStudents
-      .map(student => ({
+    const batch = firestore.batch();
+    for (const student of missing) {
+      if (!defaultStepId) continue;
+      const id = await nextId("roadmapInstances");
+      batch.set(firestore.collection("roadmapInstances").doc(String(id)), {
+        id,
         roadmapId: roadmap.definition.id,
         entityType: "student",
         entityId: student.id,
         userId,
         currentStepId: defaultStepId,
         status: "active",
-      }))
-      .filter(item => item.currentStepId !== null) as InsertRoadmapInstance[];
-    if (payload.length) {
-      await db.insert(roadmapInstances).values(payload);
-      return db
-        .select()
-        .from(roadmapInstances)
-        .where(and(eq(roadmapInstances.entityType, "student"), eq(roadmapInstances.userId, userId), inArray(roadmapInstances.entityId, ids)));
+        createdAt: now(),
+        updatedAt: now(),
+      } as RoadmapInstance);
     }
+    await batch.commit();
+    const refreshed = await firestore
+      .collection("roadmapInstances")
+      .where("entityType", "==", "student")
+      .where("userId", "==", userId)
+      .get();
+    return refreshed.docs.map(doc => normalizeDoc<RoadmapInstance>(doc)).filter(instance => ids.includes(instance.entityId));
   }
 
-  return existingInstances;
+  return existing;
 }
 
 export async function listStudentsWithRoadmap(userId: number): Promise<StudentWithRoadmap[]> {
-  const db = await getDb();
-  if (!db) {
-    return buildFallbackStudents(userId);
-  }
+  try {
+    const defaultRoadmap = await ensureDefaultStudentRoadmapFirestore();
+    await seedStudentsIfEmpty(userId, defaultRoadmap);
 
-  const defaultRoadmap = await ensureDefaultStudentRoadmap(db);
-  await seedStudentsIfEmpty(db, userId, defaultRoadmap);
+    const studentsSnap = await db().collection("students").where("userId", "==", userId).get();
+    const studentRows = studentsSnap.docs.map(doc => normalizeDoc<Student>(doc)).sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    if (!studentRows.length) return buildFallbackStudents(userId);
 
-  const studentRows = await db.select().from(students).where(eq(students.userId, userId)).orderBy(asc(students.id));
-  if (!studentRows.length) {
-    return buildFallbackStudents(userId);
-  }
-
-  const instances = await ensureInstancesForStudents(db, userId, studentRows, defaultRoadmap);
-  const roadmapIds = Array.from(new Set(instances.map(instance => instance.roadmapId)));
-  if (!roadmapIds.includes(defaultRoadmap.definition.id)) {
-    roadmapIds.push(defaultRoadmap.definition.id);
-  }
-
-  const definitions = roadmapIds.length
-    ? await db.select().from(roadmapDefinitions).where(inArray(roadmapDefinitions.id, roadmapIds))
-    : [];
-  const definitionsMap = new Map<number, RoadmapDefinition>();
-  definitions.forEach(def => definitionsMap.set(def.id, def));
-  if (!definitionsMap.has(defaultRoadmap.definition.id)) {
-    definitionsMap.set(defaultRoadmap.definition.id, defaultRoadmap.definition);
-  }
-
-  const stepRows =
-    roadmapIds.length > 0
-      ? await db
-          .select()
-          .from(roadmapSteps)
-          .where(inArray(roadmapSteps.roadmapId, roadmapIds))
-      : [];
-
-  const stepsByRoadmap = new Map<number, ParsedRoadmapStep[]>();
-  roadmapIds.forEach(roadmapId => {
-    const rows = stepRows.filter(step => step.roadmapId === roadmapId);
-    if (rows.length) {
-      stepsByRoadmap.set(
-        roadmapId,
-        rows.map(enrichStep).sort((a, b) => a.order - b.order || a.id - b.id),
-      );
+    const instances = await ensureInstancesForStudents(userId, studentRows, defaultRoadmap);
+    const roadmapIds = Array.from(new Set(instances.map(instance => instance.roadmapId)));
+    if (!roadmapIds.includes(defaultRoadmap.definition.id)) {
+      roadmapIds.push(defaultRoadmap.definition.id);
     }
-  });
-  if (!stepsByRoadmap.has(defaultRoadmap.definition.id)) {
-    stepsByRoadmap.set(defaultRoadmap.definition.id, defaultRoadmap.steps);
-  }
 
-  return studentRows.map(student => {
-    const instance = instances.find(item => item.entityId === student.id);
-    const roadmapId = instance?.roadmapId ?? defaultRoadmap.definition.id;
-    const steps = stepsByRoadmap.get(roadmapId) ?? defaultRoadmap.steps;
-    const currentStep = steps.find(step => step.id === instance?.currentStepId) ?? steps[0];
-    const currentIndex = currentStep ? steps.findIndex(step => step.id === currentStep.id) : -1;
-    return {
-      ...student,
-      roadmapDefinition: definitionsMap.get(roadmapId) ?? defaultRoadmap.definition,
-      roadmapInstance: instance,
-      steps,
-      currentStep,
-      progress: {
-        currentIndex: Math.max(currentIndex, 0),
-        total: steps.length,
-      },
-    };
-  });
+    const definitionsSnap = roadmapIds.length
+      ? await db().collection("roadmapDefinitions").where("id", "in", roadmapIds).get()
+      : null;
+    const definitions = definitionsSnap?.docs.map(doc => normalizeDoc<RoadmapDefinition>(doc)) ?? [];
+    const definitionsMap = new Map<number, RoadmapDefinition>();
+    definitions.forEach(def => definitionsMap.set(def.id, def));
+    if (!definitionsMap.has(defaultRoadmap.definition.id)) {
+      definitionsMap.set(defaultRoadmap.definition.id, defaultRoadmap.definition);
+    }
+
+    const stepsSnap = roadmapIds.length
+      ? await db().collection("roadmapSteps").where("roadmapId", "in", roadmapIds).get()
+      : null;
+    const stepRows = stepsSnap?.docs.map(doc => enrichStep(normalizeDoc<RoadmapStep>(doc))) ?? [];
+    const stepsByRoadmap = new Map<number, ParsedRoadmapStep[]>();
+    roadmapIds.forEach(roadmapId => {
+      const rows = stepRows.filter(step => step.roadmapId === roadmapId);
+      if (rows.length) {
+        stepsByRoadmap.set(
+          roadmapId,
+          rows.sort((a, b) => a.order - b.order || a.id - b.id),
+        );
+      }
+    });
+    if (!stepsByRoadmap.has(defaultRoadmap.definition.id)) {
+      stepsByRoadmap.set(defaultRoadmap.definition.id, defaultRoadmap.steps);
+    }
+
+    return studentRows.map(student => {
+      const instance = instances.find(item => item.entityId === student.id);
+      const roadmapId = instance?.roadmapId ?? defaultRoadmap.definition.id;
+      const steps = stepsByRoadmap.get(roadmapId) ?? defaultRoadmap.steps;
+      const currentStep = steps.find(step => step.id === instance?.currentStepId) ?? steps[0];
+      const currentIndex = currentStep ? steps.findIndex(step => step.id === currentStep.id) : -1;
+      return {
+        ...student,
+        roadmapDefinition: definitionsMap.get(roadmapId) ?? defaultRoadmap.definition,
+        roadmapInstance: instance,
+        steps,
+        currentStep,
+        progress: {
+          currentIndex: Math.max(currentIndex, 0),
+          total: steps.length,
+        },
+      };
+    });
+  } catch (error) {
+    console.warn("[Database] listStudentsWithRoadmap failed, returning fallback:", error);
+    return buildFallbackStudents(userId);
+  }
 }
 
-// 企業研究関連
+// Company research
 export type CompanyResearchListItem = CompanyResearch & {
   linkedCompanyName: string | null;
   companyIndustry: string | null;
@@ -888,68 +834,34 @@ export async function getCompanyResearchesByUserId(
   userId: number,
   options?: { status?: CompanyResearch["status"]; search?: string; onlyLinked?: boolean },
 ): Promise<CompanyResearchListItem[]> {
-  const db = await getDb();
-  if (!db) return [];
+  const researches = await queryByUser<CompanyResearch>("companyResearches", userId);
+  const companies = await getCompaniesByUserId(userId);
+  const companyMap = new Map<number, Company>();
+  companies.forEach(company => companyMap.set(company.id!, company));
 
-  const filters: SQL<unknown>[] = [eq(companyResearches.userId, userId)];
+  const searchTerm = options?.search?.trim().toLowerCase();
 
-  if (options?.status) {
-    filters.push(eq(companyResearches.status, options.status));
-  }
-
-  if (options?.onlyLinked) {
-    filters.push(isNotNull(companyResearches.companyId));
-  }
-
-  if (options?.search?.trim()) {
-    const pattern = `%${options.search.trim()}%`;
-    const searchCondition = or(like(companyResearches.companyName, pattern), like(companies.name, pattern));
-    if (searchCondition) {
-      filters.push(searchCondition);
-    }
-  }
-
-  const whereClause = and(...filters);
-  if (!whereClause) return [];
-
-  return db
-    .select({
-      id: companyResearches.id,
-      userId: companyResearches.userId,
-      companyId: companyResearches.companyId,
-      companyName: companyResearches.companyName,
-      status: companyResearches.status,
-      q1Overview: companyResearches.q1Overview,
-      q2BusinessModel: companyResearches.q2BusinessModel,
-      q3Strengths: companyResearches.q3Strengths,
-      q4DesiredPosition: companyResearches.q4DesiredPosition,
-      q5RoleExpectations: companyResearches.q5RoleExpectations,
-      q6PersonalStrengths: companyResearches.q6PersonalStrengths,
-      q7SelectionFlow: companyResearches.q7SelectionFlow,
-      q8InterviewCount: companyResearches.q8InterviewCount,
-      q9EvaluationPoints: companyResearches.q9EvaluationPoints,
-      q10Motivation: companyResearches.q10Motivation,
-      q11WhyThisCompany: companyResearches.q11WhyThisCompany,
-      q12ValuesFit: companyResearches.q12ValuesFit,
-      q13Concerns: companyResearches.q13Concerns,
-      q14ResolutionPlan: companyResearches.q14ResolutionPlan,
-      createdAt: companyResearches.createdAt,
-      updatedAt: companyResearches.updatedAt,
-      linkedCompanyName: companies.name,
-      companyIndustry: companies.industry,
-      companyJobType: companies.jobType,
-      companyStatus: companies.status,
+  return researches
+    .filter(item => {
+      if (options?.status && item.status !== options.status) return false;
+      if (options?.onlyLinked && item.companyId == null) return false;
+      if (searchTerm) {
+        const target = `${item.companyName} ${companyMap.get(item.companyId ?? -1)?.name ?? ""}`.toLowerCase();
+        if (!target.includes(searchTerm)) return false;
+      }
+      return true;
     })
-    .from(companyResearches)
-    .leftJoin(
-      companies,
-      and(
-        eq(companyResearches.companyId, companies.id),
-        eq(companies.userId, userId),
-      ),
-    )
-    .where(whereClause)
-    .orderBy(desc(companyResearches.updatedAt));
+    .map(item => {
+      const linked = item.companyId ? companyMap.get(item.companyId) : null;
+      return {
+        ...item,
+        linkedCompanyName: linked?.name ?? null,
+        companyIndustry: linked?.industry ?? null,
+        companyJobType: linked?.jobType ?? null,
+        companyStatus: linked?.status ?? null,
+      } as CompanyResearchListItem;
+    })
+    .sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
 }
 
 export async function getCompanyResearchById(id: number, userId: number): Promise<CompanyResearchListItem | undefined> {
@@ -958,68 +870,29 @@ export async function getCompanyResearchById(id: number, userId: number): Promis
 }
 
 export async function getCompanyResearchByCompanyId(companyId: number, userId: number): Promise<CompanyResearchListItem | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db
-    .select({
-      id: companyResearches.id,
-      userId: companyResearches.userId,
-      companyId: companyResearches.companyId,
-      companyName: companyResearches.companyName,
-      status: companyResearches.status,
-      q1Overview: companyResearches.q1Overview,
-      q2BusinessModel: companyResearches.q2BusinessModel,
-      q3Strengths: companyResearches.q3Strengths,
-      q4DesiredPosition: companyResearches.q4DesiredPosition,
-      q5RoleExpectations: companyResearches.q5RoleExpectations,
-      q6PersonalStrengths: companyResearches.q6PersonalStrengths,
-      q7SelectionFlow: companyResearches.q7SelectionFlow,
-      q8InterviewCount: companyResearches.q8InterviewCount,
-      q9EvaluationPoints: companyResearches.q9EvaluationPoints,
-      q10Motivation: companyResearches.q10Motivation,
-      q11WhyThisCompany: companyResearches.q11WhyThisCompany,
-      q12ValuesFit: companyResearches.q12ValuesFit,
-      q13Concerns: companyResearches.q13Concerns,
-      q14ResolutionPlan: companyResearches.q14ResolutionPlan,
-      createdAt: companyResearches.createdAt,
-      updatedAt: companyResearches.updatedAt,
-      linkedCompanyName: companies.name,
-      companyIndustry: companies.industry,
-      companyJobType: companies.jobType,
-      companyStatus: companies.status,
-    })
-    .from(companyResearches)
-    .leftJoin(
-      companies,
-      and(
-        eq(companyResearches.companyId, companies.id),
-        eq(companies.userId, userId),
-      ),
-    )
-    .where(and(eq(companyResearches.userId, userId), eq(companyResearches.companyId, companyId)))
-    .limit(1);
-
-  return result[0];
+  const list = await getCompanyResearchesByUserId(userId, { onlyLinked: true });
+  return list.find(item => item.companyId === companyId);
 }
 
 export async function createCompanyResearch(data: InsertCompanyResearch) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(companyResearches).values(data);
-  const insertId = Array.isArray(result) ? (result[0] as any)?.insertId : (result as any)?.insertId;
-  return { insertId, result };
+  const firestore = db();
+  const id = await nextId("companyResearches");
+  const nowValue = now();
+  const payload: CompanyResearch = { ...data, status: data.status ?? "in_progress", id, createdAt: nowValue, updatedAt: nowValue } as CompanyResearch;
+  await firestore.collection("companyResearches").doc(String(id)).set(payload);
+  return { insertId: id, result: payload };
 }
 
 export async function updateCompanyResearch(id: number, userId: number, data: Partial<InsertCompanyResearch>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(companyResearches).set(data).where(and(eq(companyResearches.id, id), eq(companyResearches.userId, userId)));
+  const existing = await getDocById<CompanyResearch>("companyResearches", id);
+  if (!existing || existing.userId !== userId) throw new Error("Company research not found");
+  await db().collection("companyResearches").doc(String(id)).set({ ...data, updatedAt: now() }, { merge: true });
 }
 
 export async function deleteCompanyResearch(id: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.delete(companyResearches).where(and(eq(companyResearches.id, id), eq(companyResearches.userId, userId)));
+  const existing = await getDocById<CompanyResearch>("companyResearches", id);
+  if (!existing || existing.userId !== userId) throw new Error("Company research not found");
+  await db().collection("companyResearches").doc(String(id)).delete();
 }
 
 function deriveCompanyProgressFromSteps(steps: SelectionStep[]) {
@@ -1054,49 +927,35 @@ function deriveCompanyProgressFromSteps(steps: SelectionStep[]) {
 }
 
 async function recomputeCompanyProgress(companyId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const steps = await db
-    .select()
-    .from(selectionSteps)
-    .where(and(eq(selectionSteps.companyId, companyId), eq(selectionSteps.userId, userId)));
-
+  const steps = await listSelectionStepsByCompany(companyId, userId);
   const derived = deriveCompanyProgressFromSteps(steps);
-  await db
-    .update(companies)
+  await db()
+    .collection("companies")
+    .doc(String(companyId))
     .set({
       status: derived.status,
       nextStep: derived.nextStep,
       nextDeadline: derived.nextDeadline,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(companies.id, companyId), eq(companies.userId, userId)));
+      updatedAt: now(),
+    }, { merge: true });
 }
 
-// ダッシュボード統計
+// Dashboard stats
 export async function getDashboardStats(userId: number) {
-  const db = await getDb();
-  if (!db) return null;
+  const companyList = await getCompaniesByUserId(userId);
+  const taskList = await getTasksByUserId(userId);
 
-  const totalCompanies = await db.select({ count: sql<number>`count(*)` }).from(companies).where(eq(companies.userId, userId));
-  const companiesByStatus = await db
-    .select({
-      status: companies.status,
-      count: sql<number>`count(*)`,
-    })
-    .from(companies)
-    .where(eq(companies.userId, userId))
-    .groupBy(companies.status);
+  const companiesByStatusMap = new Map<string | null | undefined, number>();
+  companyList.forEach(company => {
+    const key = company.status ?? "未エントリー";
+    companiesByStatusMap.set(key, (companiesByStatusMap.get(key) ?? 0) + 1);
+  });
 
-  const todayTasks = await db
-    .select()
-    .from(tasks)
-    .where(and(eq(tasks.userId, userId), eq(tasks.status, "open")))
-    .orderBy(tasks.dueDate);
+  const companiesByStatus = Array.from(companiesByStatusMap.entries()).map(([status, count]) => ({ status, count }));
 
   return {
-    totalCompanies: totalCompanies[0]?.count || 0,
+    totalCompanies: companyList.length,
     companiesByStatus,
-    todayTasks,
+    todayTasks: taskList.filter(task => task.status === "open"),
   };
 }

@@ -14,6 +14,7 @@ import { ArrowLeft, Save, Send } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { CompanyResearchStatusBadge } from "@/components/CompanyResearchStatusBadge";
+import { APP_LOGO, APP_TITLE } from "@/const";
 
 type ResearchStatus = "not_started" | "in_progress" | "completed";
 
@@ -281,6 +282,14 @@ export default function CompanyResearchWizard() {
           <Button variant="ghost" size="icon" onClick={() => setLocation(isEdit ? `/research/${researchId}` : "/research")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
+          <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/90 px-3 py-2 shadow-sm">
+            <img
+              src={APP_LOGO}
+              alt={`${APP_TITLE} logo`}
+              className="h-9 w-9 rounded-lg object-cover ring-1 ring-border/60"
+            />
+            <span className="text-xl font-semibold text-foreground">{APP_TITLE}</span>
+          </div>
           <div className="flex-1">
             <p className="text-sm font-medium text-primary">企業研究ウィザード</p>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

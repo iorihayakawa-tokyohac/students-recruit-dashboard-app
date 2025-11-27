@@ -1,9 +1,10 @@
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
-export const APP_TITLE = process.env.NEXT_PUBLIC_APP_TITLE || "App";
+export const APP_TITLE = process.env.NEXT_PUBLIC_APP_TITLE || "StepNavi";
 
 export const APP_LOGO =
-  process.env.NEXT_PUBLIC_APP_LOGO || "https://placehold.co/128x128/E1E7EF/1F2937?text=App";
+  process.env.NEXT_PUBLIC_APP_LOGO ||
+  "/icon-new.png";
 
 const FALLBACK_LOGIN_PATH =
   process.env.NEXT_PUBLIC_FALLBACK_LOGIN_PATH?.trim() || "/signin";
