@@ -22,6 +22,9 @@ function ensureFirebaseAdmin() {
       });
     } catch (error) {
       console.error("[Auth] Failed to parse FIREBASE_ADMIN_CREDENTIALS", error);
+      // Provide more diagnostic hints in logs to help debug invalid JWT/time issues
+      console.error("[Auth] Current server time:", new Date().toISOString(), "(tz:", process.env.TZ || 'unset', ")");
+      console.error("[Auth] Make sure FIREBASE_ADMIN_CREDENTIALS contains a valid service account JSON and that the JSON was not mangled when set as env var (e.g. escaped newlines).\nIf running inside a container check the container time is synced and the mounted key file is correct.");
       throw new Error("FIREBASE_ADMIN_CREDENTIALS is invalid JSON.");
     }
   }
@@ -31,13 +34,20 @@ function ensureFirebaseAdmin() {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
   if (projectId && clientEmail && privateKey) {
-    return initializeApp({
-      credential: cert({
-        projectId,
-        clientEmail,
-        privateKey,
-      }),
-    });
+    try {
+      return initializeApp({
+        credential: cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
+      });
+    } catch (error) {
+      console.error("[Auth] Failed to initialize App with FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY", error);
+      console.error("[Auth] Current server time:", new Date().toISOString(), "(tz:", process.env.TZ || 'unset', ")");
+      console.error("[Auth] Potential causes: container/server time skew, revoked/rotated service account key, or an improperly formatted private key.\nCheck key presence in Google Cloud Console IAM -> Service Accounts and/or rotate the key if needed.");
+      throw error;
+    }
   }
 
   // Fallback to Application Default Credentials (e.g., GOOGLE_APPLICATION_CREDENTIALS)
@@ -45,6 +55,8 @@ function ensureFirebaseAdmin() {
     return initializeApp();
   } catch (error) {
     console.error("[Auth] Failed to initialize Firebase Admin SDK", error);
+    console.error("[Auth] Current server time:", new Date().toISOString(), "(tz:", process.env.TZ || 'unset', ")");
+    console.error("[Auth] If you set GOOGLE_APPLICATION_CREDENTIALS to a service account JSON file, ensure it's present in the container and not revoked. Also validate the container's time sync.");
     throw new Error(
       "Firebase Admin SDK not configured. Set FIREBASE_ADMIN_CREDENTIALS or GOOGLE_APPLICATION_CREDENTIALS."
     );

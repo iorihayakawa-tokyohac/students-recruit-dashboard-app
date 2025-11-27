@@ -77,92 +77,98 @@ export default function CompanyResearchDetail() {
   const displayName = research.linkedCompanyName || research.companyName;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/research")}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-primary">企業研究レポート</p>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">{displayName}</h1>
-              <div className="flex flex-wrap items-center gap-2 mt-3">
-                <CompanyResearchStatusBadge status={research.status} />
-                {research.companyIndustry && (
-                  <Badge variant="outline">{research.companyIndustry}</Badge>
+    <div className="relative -m-4 bg-gradient-to-br from-primary/10 via-background to-background p-4 md:p-6 lg:p-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute right-[-8%] top-[-10%] h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute left-[-12%] bottom-[-20%] h-80 w-80 rounded-full bg-emerald-400/10 blur-3xl" />
+      </div>
+      <div className="relative space-y-6">
+        <div className="flex items-start gap-4">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/research")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-primary">企業研究レポート</p>
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">{displayName}</h1>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <CompanyResearchStatusBadge status={research.status} />
+                  {research.companyIndustry && (
+                    <Badge variant="outline">{research.companyIndustry}</Badge>
+                  )}
+                  {research.companyStatus && (
+                    <Badge variant="secondary">{research.companyStatus}</Badge>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {research.companyId && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setLocation(`/companies/${research.companyId}`)}
+                  >
+                    <Link2 className="mr-2 h-4 w-4" />
+                    企業詳細へ
+                  </Button>
                 )}
-                {research.companyStatus && (
-                  <Badge variant="secondary">{research.companyStatus}</Badge>
-                )}
+                <Button onClick={() => setLocation(`/research/${research.id}/edit`)}>
+                  <PencilLine className="mr-2 h-4 w-4" />
+                  編集
+                </Button>
               </div>
             </div>
-            <div className="flex gap-2">
-              {research.companyId && (
-                <Button
-                  variant="outline"
-                  onClick={() => setLocation(`/companies/${research.companyId}`)}
-                >
-                  <Link2 className="mr-2 h-4 w-4" />
-                  企業詳細へ
-                </Button>
-              )}
-              <Button onClick={() => setLocation(`/research/${research.id}/edit`)}>
-                <PencilLine className="mr-2 h-4 w-4" />
-                編集
-              </Button>
-            </div>
+            <p className="text-sm text-muted-foreground mt-2">
+              最終更新: {research.updatedAt ? format(new Date(research.updatedAt), "yyyy/MM/dd HH:mm", { locale: ja }) : "—"}
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground mt-2">
-            最終更新: {research.updatedAt ? format(new Date(research.updatedAt), "yyyy/MM/dd HH:mm", { locale: ja }) : "—"}
-          </p>
         </div>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg text-foreground">基本情報</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">企業名</span>
-            <span className="text-foreground font-medium">{displayName}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">紐づき</span>
-            <span className="text-foreground">
-              {research.companyId ? "企業一覧に紐づいています" : "企業一覧への紐づけなし"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+        <Card className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
+          <CardHeader>
+            <CardTitle className="text-lg text-foreground">基本情報</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-muted-foreground">企業名</span>
+              <span className="text-foreground font-medium">{displayName}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-muted-foreground">紐づき</span>
+              <span className="text-foreground">
+                {research.companyId ? "企業一覧に紐づいています" : "企業一覧への紐づけなし"}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid gap-4">
-        {sections.map((section) => (
-          <Card key={section.id}>
-            <CardHeader>
-              <CardTitle className="text-lg text-foreground">{section.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {section.fields.map((field, idx) => {
-                const value = (research as any)[field.key] as string | null | undefined;
-                return (
-                  <div key={field.key} className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-foreground">{field.label}</span>
-                      {idx === 0 && (
-                        <Separator className="flex-1 bg-border" />
-                      )}
+        <div className="grid gap-4">
+          {sections.map((section) => (
+            <Card key={section.id} className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
+              <CardHeader>
+                <CardTitle className="text-lg text-foreground">{section.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {section.fields.map((field, idx) => {
+                  const value = (research as any)[field.key] as string | null | undefined;
+                  return (
+                    <div key={field.key} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">{field.label}</span>
+                        {idx === 0 && (
+                          <Separator className="flex-1 bg-border" />
+                        )}
+                      </div>
+                      <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-foreground whitespace-pre-wrap min-h-[60px]">
+                        {value?.trim() ? value : "未入力"}
+                      </p>
                     </div>
-                    <p className="rounded-md border border-border bg-muted/30 p-3 text-sm text-foreground whitespace-pre-wrap min-h-[60px]">
-                      {value?.trim() ? value : "未入力"}
-                    </p>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-        ))}
+                  );
+                })}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     </div>
   );
