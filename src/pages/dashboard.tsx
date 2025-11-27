@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { StudentRoadmapCard } from "@/components/StudentRoadmapCard";
 import {
   AlertCircle,
   ArrowRight,
@@ -23,6 +24,7 @@ import {
   Video,
   Trophy,
   Clock,
+  GraduationCap,
 } from "lucide-react";
 
 type Tone = "muted" | "warning" | "danger" | "positive";
@@ -72,8 +74,9 @@ function DashboardContent() {
   const { data: companies, isLoading: companiesLoading } = trpc.companies.list.useQuery();
   const { data: tasks, isLoading: tasksLoading } = trpc.tasks.list.useQuery();
   const { data: upcomingEvents, isLoading: eventsLoading } = trpc.events.listUpcoming.useQuery({ days: 14 });
+  const { data: studentRoadmaps, isLoading: studentsLoading } = trpc.students.listWithRoadmap.useQuery();
 
-  const isLoading = statsLoading || companiesLoading || tasksLoading || eventsLoading;
+  const isLoading = statsLoading || companiesLoading || tasksLoading || eventsLoading || studentsLoading;
 
   const totalCompanies = stats?.totalCompanies ?? companies?.length ?? 0;
   const esSubmitted = useMemo(
@@ -210,6 +213,40 @@ function DashboardContent() {
             accent="from-emerald-500/20 to-emerald-500/5"
             helper="おめでとうございます！"
           />
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <GraduationCap className="h-4 w-4 text-primary" />
+              就活ロードマップ（学生本人向け）
+            </div>
+            <Badge variant="outline" className="rounded-full bg-primary/10 text-primary">
+              学生 {studentRoadmaps?.length ?? 0} 名
+            </Badge>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {studentsLoading ? (
+              <>
+                <StudentRoadmapSkeleton />
+                <StudentRoadmapSkeleton />
+              </>
+            ) : studentRoadmaps && studentRoadmaps.length > 0 ? (
+              studentRoadmaps.map(student => <StudentRoadmapCard key={student.id} student={student} />)
+            ) : (
+              <Card className="border-dashed border-border/60 bg-background/70">
+                <CardContent className="flex flex-col items-center justify-center gap-3 py-10 text-center text-muted-foreground">
+                  <GraduationCap className="h-8 w-8 text-primary" />
+                  <div>
+                    <p className="font-medium text-foreground">学生ロードマップがまだありません</p>
+                    <p className="text-sm text-muted-foreground">
+                      新規学生を追加すると、ここに伴走ステップが並びます
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </section>
 
         <section className="grid gap-6 xl:grid-cols-3">
@@ -492,6 +529,30 @@ function DashboardContent() {
   );
 }
 
+function StudentRoadmapSkeleton() {
+  return (
+    <Card className="border-none bg-white/70 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
+      <CardHeader className="space-y-3 pb-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-6 w-16" />
+        </div>
+        <Skeleton className="h-6 w-40" />
+        <div className="flex gap-2">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-5 w-16" />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Skeleton className="h-2 w-full" />
+        <Skeleton className="h-2 w-3/4" />
+        <Skeleton className="h-16 w-full" />
+      </CardContent>
+    </Card>
+  );
+}
+
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
@@ -511,6 +572,25 @@ function DashboardSkeleton() {
             <CardContent className="space-y-2">
               <Skeleton className="h-8 w-16" />
               <Skeleton className="h-4 w-32" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[1, 2].map(item => (
+          <Card key={`student-${item}`}>
+            <CardHeader className="space-y-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-6 w-48" />
+              <div className="flex gap-2">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-16" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-2 w-3/4" />
+              <Skeleton className="h-14 w-full" />
             </CardContent>
           </Card>
         ))}

@@ -26,6 +26,25 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
+ * 学生テーブル
+ * リクルーターが伴走する学生の基本情報を管理
+ */
+export const students = mysqlTable("students", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  university: varchar("university", { length: 255 }),
+  graduationYear: smallint("graduationYear"),
+  desiredIndustry: varchar("desiredIndustry", { length: 255 }),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Student = typeof students.$inferSelect;
+export type InsertStudent = typeof students.$inferInsert;
+
+/**
  * 企業情報テーブル
  * 就活生が応募した企業の情報を管理
  */
@@ -170,3 +189,49 @@ export const selectionSteps = mysqlTable("selection_steps", {
 
 export type SelectionStep = typeof selectionSteps.$inferSelect;
 export type InsertSelectionStep = typeof selectionSteps.$inferInsert;
+
+/**
+ * 学生向けロードマップ定義
+ */
+export const roadmapDefinitions = mysqlTable("roadmap_definitions", {
+  id: int("id").autoincrement().primaryKey(),
+  key: varchar("key", { length: 64 }).notNull().unique(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  entityType: mysqlEnum("entityType", ["student"]).default("student").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RoadmapDefinition = typeof roadmapDefinitions.$inferSelect;
+export type InsertRoadmapDefinition = typeof roadmapDefinitions.$inferInsert;
+
+export const roadmapSteps = mysqlTable("roadmap_steps", {
+  id: int("id").autoincrement().primaryKey(),
+  roadmapId: int("roadmapId").notNull(),
+  order: smallint("order").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  taskExamples: text("taskExamples"),
+  nextActions: text("nextActions"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RoadmapStep = typeof roadmapSteps.$inferSelect;
+export type InsertRoadmapStep = typeof roadmapSteps.$inferInsert;
+
+export const roadmapInstances = mysqlTable("roadmap_instances", {
+  id: int("id").autoincrement().primaryKey(),
+  roadmapId: int("roadmapId").notNull(),
+  entityType: mysqlEnum("entityType", ["student"]).default("student").notNull(),
+  entityId: int("entityId").notNull(),
+  userId: int("userId").notNull(),
+  currentStepId: int("currentStepId"),
+  status: mysqlEnum("status", ["active", "completed", "paused"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RoadmapInstance = typeof roadmapInstances.$inferSelect;
+export type InsertRoadmapInstance = typeof roadmapInstances.$inferInsert;

@@ -85,6 +85,14 @@ export const appRouter = router({
       }),
   }),
 
+  // 学生・ロードマップ
+  students: router({
+    listWithRoadmap: protectedProcedure.query(async ({ ctx }) => {
+      const { listStudentsWithRoadmap } = await import("./db");
+      return listStudentsWithRoadmap(ctx.user.id);
+    }),
+  }),
+
   // タスク管理
   tasks: router({
     list: protectedProcedure.query(async ({ ctx }) => {

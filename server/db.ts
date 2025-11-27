@@ -20,6 +20,18 @@ import {
   InsertSelectionStep,
   SelectionStep,
   NotificationPreference,
+  students,
+  InsertStudent,
+  Student,
+  roadmapDefinitions,
+  InsertRoadmapDefinition,
+  RoadmapDefinition,
+  roadmapSteps,
+  InsertRoadmapStep,
+  RoadmapStep,
+  roadmapInstances,
+  InsertRoadmapInstance,
+  RoadmapInstance,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -124,6 +136,133 @@ export async function getUserByEmail(email: string) {
   const result = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+const defaultStudentRoadmapDefinition: RoadmapDefinition = {
+  id: 1,
+  key: "student_support_default",
+  title: "就活ロードマップ",
+  description: "学生本人が自分の進捗を管理するための標準フロー",
+  entityType: "student",
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+};
+
+const defaultStudentRoadmapSteps: RoadmapStep[] = [
+  {
+    id: 1,
+    roadmapId: 1,
+    order: 1,
+    title: "自己理解・キャリアの方向性決定",
+    description: "自己理解を深め、将来像の仮説をつくるフェーズ",
+    taskExamples: JSON.stringify(["自己分析", "ガクチカ整理", "強み弱み整理", "将来像のラフ設計"]),
+    nextActions: JSON.stringify(["自己分析シートを埋める", "ガクチカを3パターン書き出す", "強み3つ/弱み3つをメモする"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  {
+    id: 2,
+    roadmapId: 1,
+    order: 2,
+    title: "業界研究・企業研究",
+    description: "業界や企業を幅広く理解し、受ける候補を整理するフェーズ",
+    taskExamples: JSON.stringify(["業界マップを見る", "気になる企業をストック", "受ける可能性のある企業を一覧化"]),
+    nextActions: JSON.stringify(["気になる企業を5社ピックアップ", "業界比較のメモを作成"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  {
+    id: 3,
+    roadmapId: 1,
+    order: 3,
+    title: "ES・書類対策",
+    description: "提出物の質を高め、締切に備えるフェーズ",
+    taskExamples: JSON.stringify(["ESドラフトの作成", "自己PR／志望動機を整える", "過去応募企業のES管理"]),
+    nextActions: JSON.stringify(["今週提出予定のESを登録", "志望動機テンプレートを作成"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  {
+    id: 4,
+    roadmapId: 1,
+    order: 4,
+    title: "面接・Webテスト対策",
+    description: "面接・筆記に備え、アウトプットを磨くフェーズ",
+    taskExamples: JSON.stringify(["模擬面接", "面接想定問答の作成", "Webテスト対策"]),
+    nextActions: JSON.stringify(["想定問答を10問埋める", "模擬面接の日程を決める"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  {
+    id: 5,
+    roadmapId: 1,
+    order: 5,
+    title: "エントリー・選考管理",
+    description: "エントリー先と日程・締切を整理し、抜け漏れを防ぐフェーズ",
+    taskExamples: JSON.stringify(["エントリーした企業一覧", "面接日程管理", "提出期限のリマインド"]),
+    nextActions: JSON.stringify(["受験企業の締切を入力", "面接日程をカレンダーに登録"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  {
+    id: 6,
+    roadmapId: 1,
+    order: 6,
+    title: "内定比較・意思決定",
+    description: "内定を比較し、自分の評価軸で意思決定するフェーズ",
+    taskExamples: JSON.stringify(["内定企業一覧", "評価軸を使った比較", "入社意思の決定"]),
+    nextActions: JSON.stringify(["評価軸シートを作る", "意思決定期限を設定する"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  {
+    id: 7,
+    roadmapId: 1,
+    order: 7,
+    title: "入社準備",
+    description: "入社前の手続き・生活準備を進めるフェーズ",
+    taskExamples: JSON.stringify(["住まい・書類の準備", "提出書類の管理", "入社前にやることリスト"]),
+    nextActions: JSON.stringify(["入社前TODOを洗い出す", "必要書類をリスト化"]),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+];
+
+type ParsedRoadmapStep = RoadmapStep & {
+  tasks: string[];
+  nextActionsList: string[];
+};
+
+export type StudentWithRoadmap = Student & {
+  roadmapDefinition?: RoadmapDefinition;
+  roadmapInstance?: RoadmapInstance;
+  steps: ParsedRoadmapStep[];
+  currentStep?: ParsedRoadmapStep;
+  progress: {
+    currentIndex: number;
+    total: number;
+  };
+};
+
+function parseTextArray(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(item => typeof item === "string");
+    }
+  } catch (error) {
+    console.warn("[Database] Failed to parse roadmap step array:", error);
+  }
+  return [];
+}
+
+function enrichStep(step: RoadmapStep): ParsedRoadmapStep {
+  return {
+    ...step,
+    tasks: parseTextArray(step.taskExamples),
+    nextActionsList: parseTextArray(step.nextActions),
+  };
 }
 
 async function assertCompanyOwnership(userId: number, companyId: number) {
@@ -404,6 +543,307 @@ export async function deleteSelectionStep(stepId: number, userId: number) {
   if (!existing.length) return;
   await db.delete(selectionSteps).where(and(eq(selectionSteps.id, stepId), eq(selectionSteps.userId, userId)));
   await recomputeCompanyProgress(existing[0].companyId, userId);
+}
+
+function buildFallbackStudents(userId: number): StudentWithRoadmap[] {
+  const now = new Date();
+  const definition: RoadmapDefinition = { ...defaultStudentRoadmapDefinition, createdAt: now, updatedAt: now };
+  const steps = defaultStudentRoadmapSteps.map(enrichStep);
+  const tanaka: Student = {
+    id: 101,
+    userId,
+    name: "田中 陽菜",
+    university: "早稲田大学",
+    graduationYear: 2026,
+    desiredIndustry: "IT / コンサル",
+    note: "成長環境を重視。まずはキャリアヒアリングを希望。",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const sato: Student = {
+    id: 102,
+    userId,
+    name: "佐藤 海斗",
+    university: "京都大学",
+    graduationYear: 2026,
+    desiredIndustry: "メーカー / モビリティ",
+    note: "プロダクト志向で、実地に近い経験を求めている。",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const currentStep = steps.find(step => step.order === 4) ?? steps[0];
+  const altStep = steps.find(step => step.order === 3) ?? currentStep;
+  const instances: RoadmapInstance[] = [
+    {
+      id: 201,
+      roadmapId: definition.id,
+      entityType: "student",
+      entityId: tanaka.id,
+      userId,
+      currentStepId: currentStep?.id ?? null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 202,
+      roadmapId: definition.id,
+      entityType: "student",
+      entityId: sato.id,
+      userId,
+      currentStepId: altStep?.id ?? null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+
+  return [tanaka, sato].map(student => {
+    const instance = instances.find(i => i.entityId === student.id);
+    const orderedSteps = steps.slice().sort((a, b) => a.order - b.order || a.id - b.id);
+    const currentStepData = orderedSteps.find(step => step.id === instance?.currentStepId) ?? orderedSteps[0];
+    const currentIndex = currentStepData ? orderedSteps.findIndex(step => step.id === currentStepData.id) : -1;
+    return {
+      ...student,
+      roadmapDefinition: definition,
+      roadmapInstance: instance,
+      steps: orderedSteps,
+      currentStep: currentStepData,
+      progress: { currentIndex: Math.max(currentIndex, 0), total: orderedSteps.length },
+    };
+  });
+}
+
+async function ensureDefaultStudentRoadmap(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const existing = await db
+    .select()
+    .from(roadmapDefinitions)
+    .where(eq(roadmapDefinitions.key, defaultStudentRoadmapDefinition.key))
+    .limit(1);
+  let definition = existing[0];
+
+  if (!definition) {
+    await db
+      .insert(roadmapDefinitions)
+      .values({
+        key: defaultStudentRoadmapDefinition.key,
+        title: defaultStudentRoadmapDefinition.title,
+        description: defaultStudentRoadmapDefinition.description,
+        entityType: "student",
+      })
+      .onDuplicateKeyUpdate({
+        set: {
+          title: defaultStudentRoadmapDefinition.title,
+          description: defaultStudentRoadmapDefinition.description,
+          entityType: "student",
+          updatedAt: new Date(),
+        },
+      });
+    const refreshed = await db
+      .select()
+      .from(roadmapDefinitions)
+      .where(eq(roadmapDefinitions.key, defaultStudentRoadmapDefinition.key))
+      .limit(1);
+    definition = refreshed[0] ?? { ...defaultStudentRoadmapDefinition, createdAt: new Date(), updatedAt: new Date() };
+  }
+
+  let steps = await db.select().from(roadmapSteps).where(eq(roadmapSteps.roadmapId, definition.id));
+  if (!steps.length) {
+    const payload: InsertRoadmapStep[] = defaultStudentRoadmapSteps.map(step => ({
+      id: step.id,
+      roadmapId: definition.id,
+      order: step.order,
+      title: step.title,
+      description: step.description,
+      taskExamples: step.taskExamples,
+      nextActions: step.nextActions,
+    }));
+    await db.insert(roadmapSteps).values(payload);
+    steps = await db.select().from(roadmapSteps).where(eq(roadmapSteps.roadmapId, definition.id));
+  }
+
+  return {
+    definition,
+    steps: steps.map(enrichStep).sort((a, b) => a.order - b.order || a.id - b.id),
+  };
+}
+
+async function seedStudentsIfEmpty(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  userId: number,
+  roadmap: { definition: RoadmapDefinition; steps: ParsedRoadmapStep[] },
+) {
+  const existingCount = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(students)
+    .where(eq(students.userId, userId));
+  if ((existingCount[0]?.count ?? 0) > 0) return;
+
+  const sampleStudents: InsertStudent[] = [
+    {
+      userId,
+      name: "田中 陽菜",
+      university: "早稲田大学",
+      graduationYear: 2026,
+      desiredIndustry: "IT / コンサル",
+      note: "成長環境を重視。まずはキャリアヒアリングを希望。",
+    },
+    {
+      userId,
+      name: "佐藤 海斗",
+      university: "京都大学",
+      graduationYear: 2026,
+      desiredIndustry: "メーカー / モビリティ",
+      note: "プロダクト志向で、実地に近い経験を求めている。",
+    },
+  ];
+
+  await db.insert(students).values(sampleStudents);
+
+  const inserted = await db
+    .select()
+    .from(students)
+    .where(eq(students.userId, userId))
+    .orderBy(asc(students.id))
+    .limit(sampleStudents.length);
+
+  const defaultStepId = roadmap.steps.find(step => step.order === 4)?.id ?? roadmap.steps[0]?.id ?? null;
+  const secondaryStepId = roadmap.steps.find(step => step.order === 3)?.id ?? defaultStepId;
+
+  const instances: InsertRoadmapInstance[] = [];
+  if (inserted[0] && defaultStepId) {
+    instances.push({
+      roadmapId: roadmap.definition.id,
+      entityType: "student",
+      entityId: inserted[0].id,
+      userId,
+      currentStepId: defaultStepId,
+      status: "active",
+    });
+  }
+  if (inserted[1] && secondaryStepId) {
+    instances.push({
+      roadmapId: roadmap.definition.id,
+      entityType: "student",
+      entityId: inserted[1].id,
+      userId,
+      currentStepId: secondaryStepId,
+      status: "active",
+    });
+  }
+  if (instances.length) {
+    await db.insert(roadmapInstances).values(instances);
+  }
+}
+
+async function ensureInstancesForStudents(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  userId: number,
+  studentList: Student[],
+  roadmap: { definition: RoadmapDefinition; steps: ParsedRoadmapStep[] },
+) {
+  if (!studentList.length) return [] as RoadmapInstance[];
+
+  const ids = studentList.map(student => student.id);
+  const existingInstances = await db
+    .select()
+    .from(roadmapInstances)
+    .where(and(eq(roadmapInstances.entityType, "student"), eq(roadmapInstances.userId, userId), inArray(roadmapInstances.entityId, ids)));
+
+  const missingStudents = studentList.filter(student => !existingInstances.some(instance => instance.entityId === student.id));
+  if (missingStudents.length) {
+    const defaultStepId = roadmap.steps.find(step => step.order === 4)?.id ?? roadmap.steps[0]?.id ?? null;
+    const payload: InsertRoadmapInstance[] = missingStudents
+      .map(student => ({
+        roadmapId: roadmap.definition.id,
+        entityType: "student",
+        entityId: student.id,
+        userId,
+        currentStepId: defaultStepId,
+        status: "active",
+      }))
+      .filter(item => item.currentStepId !== null) as InsertRoadmapInstance[];
+    if (payload.length) {
+      await db.insert(roadmapInstances).values(payload);
+      return db
+        .select()
+        .from(roadmapInstances)
+        .where(and(eq(roadmapInstances.entityType, "student"), eq(roadmapInstances.userId, userId), inArray(roadmapInstances.entityId, ids)));
+    }
+  }
+
+  return existingInstances;
+}
+
+export async function listStudentsWithRoadmap(userId: number): Promise<StudentWithRoadmap[]> {
+  const db = await getDb();
+  if (!db) {
+    return buildFallbackStudents(userId);
+  }
+
+  const defaultRoadmap = await ensureDefaultStudentRoadmap(db);
+  await seedStudentsIfEmpty(db, userId, defaultRoadmap);
+
+  const studentRows = await db.select().from(students).where(eq(students.userId, userId)).orderBy(asc(students.id));
+  if (!studentRows.length) {
+    return buildFallbackStudents(userId);
+  }
+
+  const instances = await ensureInstancesForStudents(db, userId, studentRows, defaultRoadmap);
+  const roadmapIds = Array.from(new Set(instances.map(instance => instance.roadmapId)));
+  if (!roadmapIds.includes(defaultRoadmap.definition.id)) {
+    roadmapIds.push(defaultRoadmap.definition.id);
+  }
+
+  const definitions = roadmapIds.length
+    ? await db.select().from(roadmapDefinitions).where(inArray(roadmapDefinitions.id, roadmapIds))
+    : [];
+  const definitionsMap = new Map<number, RoadmapDefinition>();
+  definitions.forEach(def => definitionsMap.set(def.id, def));
+  if (!definitionsMap.has(defaultRoadmap.definition.id)) {
+    definitionsMap.set(defaultRoadmap.definition.id, defaultRoadmap.definition);
+  }
+
+  const stepRows =
+    roadmapIds.length > 0
+      ? await db
+          .select()
+          .from(roadmapSteps)
+          .where(inArray(roadmapSteps.roadmapId, roadmapIds))
+      : [];
+
+  const stepsByRoadmap = new Map<number, ParsedRoadmapStep[]>();
+  roadmapIds.forEach(roadmapId => {
+    const rows = stepRows.filter(step => step.roadmapId === roadmapId);
+    if (rows.length) {
+      stepsByRoadmap.set(
+        roadmapId,
+        rows.map(enrichStep).sort((a, b) => a.order - b.order || a.id - b.id),
+      );
+    }
+  });
+  if (!stepsByRoadmap.has(defaultRoadmap.definition.id)) {
+    stepsByRoadmap.set(defaultRoadmap.definition.id, defaultRoadmap.steps);
+  }
+
+  return studentRows.map(student => {
+    const instance = instances.find(item => item.entityId === student.id);
+    const roadmapId = instance?.roadmapId ?? defaultRoadmap.definition.id;
+    const steps = stepsByRoadmap.get(roadmapId) ?? defaultRoadmap.steps;
+    const currentStep = steps.find(step => step.id === instance?.currentStepId) ?? steps[0];
+    const currentIndex = currentStep ? steps.findIndex(step => step.id === currentStep.id) : -1;
+    return {
+      ...student,
+      roadmapDefinition: definitionsMap.get(roadmapId) ?? defaultRoadmap.definition,
+      roadmapInstance: instance,
+      steps,
+      currentStep,
+      progress: {
+        currentIndex: Math.max(currentIndex, 0),
+        total: steps.length,
+      },
+    };
+  });
 }
 
 // 企業研究関連

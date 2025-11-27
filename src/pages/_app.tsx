@@ -13,10 +13,12 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { Router } from "wouter";
 
-const createStaticLocationHook = (path: string) => (): [string, (path: string) => void] => [
-  path,
-  () => {},
-];
+const createStaticLocationHook = (path: string) => () => {
+  const [location] = useState(path);
+  useEffect(() => {}, []);
+  const navigate = useCallback(() => {}, []);
+  return [location, navigate] as [string, (to: string, options?: { replace?: boolean }) => void];
+};
 
 const useNextLocation = () => {
   const nextRouter = useRouter();
