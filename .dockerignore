@@ -1,0 +1,28 @@
+# Dependencies and builds
+node_modules
+.next
+dist
+build
+coverage
+*.log
+
+# Package manager caches
+.pnpm-store
+.npm
+.yarn
+
+# VCS
+.git
+.gitignore
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+
+# Tests and docs not needed in image
+__tests__
+tests
+docs
+playwright-report
+tmp
