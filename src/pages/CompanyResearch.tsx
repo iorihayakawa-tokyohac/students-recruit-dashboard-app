@@ -199,9 +199,9 @@ function StatCard({ title, value, accent }: { title: string; value: number; acce
   return (
     <Card className="overflow-hidden border-none bg-white/70 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
       <div className={cn("h-1 bg-gradient-to-r", accent)} />
-      <CardContent className="p-4 space-y-1.5">
+      <CardContent className="p-4 space-y-1">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <p className="text-3xl font-semibold text-foreground">{value}</p>
+        <p className="text-lg font-semibold text-foreground leading-tight">{value}</p>
       </CardContent>
     </Card>
   );

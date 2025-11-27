@@ -66,6 +66,11 @@ export function useAuth(options?: UseAuthOptions) {
     try {
       const auth = getFirebaseAuth();
       await signOut(auth);
+      await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+      const target = getLoginUrl("login");
+      if (typeof window !== "undefined") {
+        window.location.href = target;
+      }
     } catch (err) {
       console.error("Logout failed", err);
     }

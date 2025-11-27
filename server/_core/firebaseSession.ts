@@ -59,4 +59,10 @@ export function registerFirebaseSessionRoute(app: Express) {
       res.status(401).json({ error: "認証に失敗しました。" });
     }
   });
+
+  app.post("/api/auth/logout", (req, res) => {
+    const cookieOptions = getSessionCookieOptions(req);
+    res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    res.json({ success: true });
+  });
 }

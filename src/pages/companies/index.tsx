@@ -258,9 +258,9 @@ function Companies() {
           {highlightCards.map((card) => (
             <Card key={card.title} className="overflow-hidden border-none bg-white/70 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
               <div className={cn("h-1 bg-gradient-to-r", card.accent)} />
-              <CardContent className="p-5 space-y-2">
+              <CardContent className="p-5 space-y-1.5">
                 <p className="text-sm font-medium text-muted-foreground">{card.title}</p>
-                <p className="text-3xl font-semibold text-foreground">{card.value}</p>
+                <p className="text-lg font-semibold text-foreground leading-tight">{card.value}</p>
                 <p className="text-xs text-muted-foreground">{card.helper}</p>
               </CardContent>
             </Card>

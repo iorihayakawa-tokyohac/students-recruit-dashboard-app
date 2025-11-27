@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
-import { adminProcedure, publicProcedure, router } from "./trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./trpc";
+import { checkFirestoreHealth } from "../db";
 
 export const systemRouter = router({
   health: publicProcedure
@@ -26,4 +27,22 @@ export const systemRouter = router({
         success: delivered,
       } as const;
     }),
+
+  status: protectedProcedure.query(async () => {
+    const firestore = await checkFirestoreHealth();
+    const projectId =
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+      "unknown";
+
+    return {
+      serverTime: new Date(),
+      firestore,
+      firebase: {
+        projectId,
+        emulatorHost: process.env.FIREBASE_EMULATOR_HOST ?? null,
+      },
+    };
+  }),
 });

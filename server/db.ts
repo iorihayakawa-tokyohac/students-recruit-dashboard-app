@@ -45,6 +45,16 @@ function db() {
   return getFirestore(getFirebaseAdminApp());
 }
 
+function omitUndefined<T extends Record<string, unknown>>(obj: T) {
+  const cleaned: Record<string, unknown> = {};
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value !== undefined) {
+      cleaned[key] = value;
+    }
+  });
+  return cleaned as T;
+}
+
 function toDate(value: FirestoreDate): Date | null {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -65,6 +75,14 @@ function normalizeDoc<T extends { id?: number; createdAt?: Date; updatedAt?: Dat
     createdAt: toDate((data as any).createdAt) ?? new Date(),
     updatedAt: toDate((data as any).updatedAt) ?? new Date(),
   } as T;
+}
+
+function normalizeEventDates(evt: Event): Event {
+  return {
+    ...evt,
+    startAt: toDate(evt.startAt) ?? new Date(0),
+    endAt: evt.endAt ? toDate(evt.endAt) ?? null : null,
+  } as Event;
 }
 
 async function nextId(collection: CollectionName): Promise<number> {
@@ -222,7 +240,13 @@ export async function createTask(data: InsertTask) {
   const firestore = db();
   const id = await nextId("tasks");
   const nowValue = now();
-  const payload: Task = { ...data, status: data.status ?? "open", id, createdAt: nowValue, updatedAt: nowValue } as Task;
+  const payload: Task = omitUndefined({
+    ...data,
+    status: data.status ?? "open",
+    id,
+    createdAt: nowValue,
+    updatedAt: nowValue,
+  } as Task);
   await firestore.collection("tasks").doc(String(id)).set(payload);
   return payload;
 }
@@ -230,7 +254,10 @@ export async function createTask(data: InsertTask) {
 export async function updateTask(taskId: number, userId: number, data: Partial<InsertTask>) {
   const existing = await getTaskById(taskId, userId);
   if (!existing) throw new Error("Task not found");
-  await db().collection("tasks").doc(String(taskId)).set({ ...data, updatedAt: now() }, { merge: true });
+  await db()
+    .collection("tasks")
+    .doc(String(taskId))
+    .set(omitUndefined({ ...data, updatedAt: now() }), { merge: true });
 }
 
 export async function deleteTask(taskId: number, userId: number) {
@@ -243,7 +270,7 @@ export async function deleteTask(taskId: number, userId: number) {
 export async function getEventById(eventId: number, userId: number) {
   const event = await getDocById<Event>("events", eventId);
   if (!event || event.userId !== userId) return undefined;
-  return event;
+  return normalizeEventDates(event);
 }
 
 export async function listEventsInRange(
@@ -260,7 +287,8 @@ export async function listEventsInRange(
       if (params.types && params.types.length > 0 && !params.types.includes(evt.type)) return false;
       return true;
     })
-    .sort((a, b) => (toDate(a.startAt)?.getTime() || 0) - (toDate(b.startAt)?.getTime() || 0));
+    .sort((a, b) => (toDate(a.startAt)?.getTime() || 0) - (toDate(b.startAt)?.getTime() || 0))
+    .map(normalizeEventDates);
 }
 
 export async function getUpcomingEvents(userId: number, days: number = 7) {
@@ -279,14 +307,14 @@ export async function createEvent(data: InsertEvent) {
   const firestore = db();
   const id = await nextId("events");
   const nowValue = now();
-  const payload: Event = {
+  const payload: Event = omitUndefined({
     ...data,
     id,
     remindBeforeDays: data.remindBeforeDays ?? 1,
     remindOnDay: data.remindOnDay ?? true,
     createdAt: nowValue,
     updatedAt: nowValue,
-  } as Event;
+  } as Event);
   await firestore.collection("events").doc(String(id)).set(payload);
   return { insertId: id, result: payload };
 }
@@ -297,13 +325,61 @@ export async function updateEvent(eventId: number, userId: number, data: Partial
   if (data.companyId) {
     await assertCompanyOwnership(userId, data.companyId);
   }
-  await db().collection("events").doc(String(eventId)).set({ ...data, updatedAt: now() }, { merge: true });
+  await db()
+    .collection("events")
+    .doc(String(eventId))
+    .set(omitUndefined({ ...data, updatedAt: now() }), { merge: true });
 }
 
 export async function deleteEvent(eventId: number, userId: number) {
   const current = await getEventById(eventId, userId);
   if (!current) throw new Error("Event not found");
   await db().collection("events").doc(String(eventId)).delete();
+}
+
+// Health checks
+export type FirestoreHealth = {
+  ok: boolean;
+  readOk: boolean;
+  writeOk: boolean;
+  lastPingAt: Date | null;
+  error?: string;
+};
+
+export async function checkFirestoreHealth(): Promise<FirestoreHealth> {
+  const firestore = db();
+  const pingRef = firestore.collection("_meta").doc("health");
+  let error: string | undefined;
+  let readOk = false;
+  let writeOk = false;
+  let lastPingAt: Date | null = null;
+
+  try {
+    const nowValue = Timestamp.now();
+    await pingRef.set({ lastPingAt: nowValue }, { merge: true });
+    writeOk = true;
+  } catch (err: any) {
+    error = err?.message ?? String(err);
+  }
+
+  try {
+    const snap = await pingRef.get();
+    if (snap.exists) {
+      readOk = true;
+      const data = snap.data();
+      lastPingAt = toDate((data as any)?.lastPingAt);
+    }
+  } catch (err: any) {
+    if (!error) error = err?.message ?? String(err);
+  }
+
+  return {
+    ok: readOk && writeOk,
+    readOk,
+    writeOk,
+    lastPingAt,
+    error,
+  };
 }
 
 // Notes

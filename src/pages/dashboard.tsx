@@ -108,7 +108,9 @@ function DashboardContent() {
     () =>
       (upcomingEvents ?? [])
         .slice()
-        .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+        .map(evt => ({ ...evt, _startAt: asDate((evt as any).startAt) }))
+        .filter(evt => evt._startAt)
+        .sort((a, b) => (a._startAt as Date).getTime() - (b._startAt as Date).getTime())
         .slice(0, 6),
     [upcomingEvents]
   );
@@ -345,7 +347,8 @@ function DashboardContent() {
                 </div>
               )}
               {upcomingEventList.map(event => {
-                const startAt = new Date(event.startAt);
+                const startAt = asDate((event as any)._startAt ?? event.startAt);
+                if (!startAt) return null;
                 const overdue = isPast(startAt) && !isToday(startAt);
                 const urgent = isToday(startAt) || isTomorrow(startAt);
                 const company = companies?.find(c => c.id === event.companyId);
@@ -655,12 +658,12 @@ function InsightCard({ title, value, helper, icon, accent }: InsightCardProps) {
   return (
     <Card className="overflow-hidden border-none bg-white/70 shadow-sm ring-1 ring-border/50 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-900/70">
       <div className={cn("h-1.5 w-full bg-gradient-to-r", accent)} />
-      <CardContent className="p-5 space-y-3">
+      <CardContent className="p-5 space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
           <div className="rounded-full bg-primary/10 p-2 text-primary">{icon}</div>
         </div>
-        <div className="text-3xl font-semibold tracking-tight text-foreground">{value}</div>
+        <div className="text-lg font-semibold tracking-tight text-foreground">{value}</div>
         {helper && <p className="text-xs text-muted-foreground">{helper}</p>}
       </CardContent>
     </Card>
