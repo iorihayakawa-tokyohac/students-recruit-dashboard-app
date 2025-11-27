@@ -37,16 +37,46 @@ import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+// Support both DATABASE_URL and Vercel-style MYSQL* envs.
+function resolveDatabaseUrl(): string {
+  const direct = process.env.DATABASE_URL?.trim();
+  if (direct) return direct;
+
+  const host = process.env.MYSQLHOST || process.env.MYSQL_HOST;
+  const user = process.env.MYSQLUSER || process.env.MYSQL_USER;
+  const password = process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD;
+  const database = process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE;
+  const port = process.env.MYSQLPORT || process.env.MYSQL_PORT || "3306";
+
+  if (host && user && password && database) {
+    return `mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+  }
+
+  return "";
+}
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
+  if (_db) return _db;
+
+  const databaseUrl = resolveDatabaseUrl();
+  if (!databaseUrl) {
+    console.warn("[Database] DATABASE_URL / MYSQL* env vars not set");
+    return null;
   }
+
+  try {
+    const hostname = new URL(databaseUrl).hostname;
+    if (ENV.isProduction && ["127.0.0.1", "localhost"].includes(hostname)) {
+      console.error("[Database] Refusing to connect to local MySQL in production. Set remote DATABASE_URL / MYSQL* vars.");
+      return null;
+    }
+    _db = drizzle(databaseUrl);
+  } catch (error) {
+    console.warn("[Database] Failed to connect:", error);
+    _db = null;
+  }
+
   return _db;
 }
 
