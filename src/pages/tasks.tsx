@@ -353,7 +353,7 @@ function StatCard({ title, value, accent }: { title: string; value: number; acce
       <div className={cn("h-1 bg-gradient-to-r", accent)} />
       <CardContent className="p-4 space-y-1">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <p className="text-lg font-semibold text-foreground leading-tight">{value}</p>
+        <p className="text-sm font-semibold text-foreground leading-tight">{value}</p>
       </CardContent>
     </Card>
   );

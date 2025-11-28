@@ -16,6 +16,7 @@ import CompanyResearchDetail from "./pages/CompanyResearchDetail";
 import CompanyResearchWizard from "./pages/CompanyResearchWizard";
 import Events from "./pages/events";
 import StatusPage from "./pages/status";
+import MyProfilePage from "./pages/MyProfile";
 
 function Router() {
   return (
@@ -29,6 +30,11 @@ function Router() {
       <Route path="/dashboard">
         <DashboardLayout>
           <Dashboard />
+        </DashboardLayout>
+      </Route>
+      <Route path="/profile">
+        <DashboardLayout>
+          <MyProfilePage />
         </DashboardLayout>
       </Route>
       <Route path="/companies">

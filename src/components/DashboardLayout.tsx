@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { APP_LOGO, APP_TITLE, getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Building2, CheckSquare, BookOpenCheck, CalendarClock } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Building2, CheckSquare, BookOpenCheck, CalendarClock, User } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -29,6 +29,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "ダッシュボード", path: "/dashboard" },
+  { icon: User, label: "マイプロフィール", path: "/profile" },
   { icon: Building2, label: "企業一覧", path: "/companies" },
   { icon: BookOpenCheck, label: "企業研究", path: "/research" },
   { icon: CheckSquare, label: "タスク", path: "/tasks" },

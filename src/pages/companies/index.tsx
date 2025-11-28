@@ -260,7 +260,7 @@ function Companies() {
               <div className={cn("h-1 bg-gradient-to-r", card.accent)} />
               <CardContent className="p-5 space-y-1.5">
                 <p className="text-sm font-medium text-muted-foreground">{card.title}</p>
-                <p className="text-lg font-semibold text-foreground leading-tight">{card.value}</p>
+                <p className="text-sm font-semibold text-foreground leading-tight">{card.value}</p>
                 <p className="text-xs text-muted-foreground">{card.helper}</p>
               </CardContent>
             </Card>
