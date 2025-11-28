@@ -17,9 +17,9 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, ExternalLink, FileQuestion, NotebookPen, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 import { CompanyResearchStatusBadge } from "@/components/CompanyResearchStatusBadge";
+import { formatDate } from "@/lib/date";
 
 export default function CompanyDetail() {
   const [, params] = useRoute("/companies/:id");
@@ -196,7 +196,7 @@ export default function CompanyDetail() {
       mypageUrl: company.mypageUrl || "",
       status: company.status,
       nextStep: company.nextStep || "",
-      nextDeadline: company.nextDeadline ? format(new Date(company.nextDeadline), "yyyy-MM-dd'T'HH:mm") : "",
+      nextDeadline: formatDate(company.nextDeadline, "yyyy-MM-dd'T'HH:mm", ""),
       priority: company.priority || "B",
       memo: company.memo || "",
     });
@@ -354,7 +354,7 @@ export default function CompanyDetail() {
                   <div>
                     <Label className="text-muted-foreground">次の締切</Label>
                     <p className="text-foreground mt-1">
-                      {format(new Date(company.nextDeadline), "yyyy年M月d日(E) HH:mm", { locale: ja })}
+                      {formatDate(company.nextDeadline, "yyyy年M月d日(E) HH:mm")}
                     </p>
                   </div>
                 )}
@@ -416,7 +416,7 @@ export default function CompanyDetail() {
                             </Badge>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">
-                                {format(new Date(note.createdAt), "M/d HH:mm", { locale: ja })}
+                                {formatDate(note.createdAt, "M/d HH:mm")}
                               </span>
                               <Button
                                 variant="ghost"
@@ -450,7 +450,7 @@ export default function CompanyDetail() {
                       <div className="flex items-center gap-3">
                         <CompanyResearchStatusBadge status={research.status} />
                         <p className="text-sm text-muted-foreground">
-                          最終更新: {research.updatedAt ? format(new Date(research.updatedAt), "M/d HH:mm", { locale: ja }) : "-"}
+                          最終更新: {formatDate(research.updatedAt, "M/d HH:mm")}
                         </p>
                       </div>
                       <div className="flex gap-2">

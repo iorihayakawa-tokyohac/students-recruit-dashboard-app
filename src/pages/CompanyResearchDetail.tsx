@@ -1,13 +1,17 @@
+import { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
-import { format } from "date-fns";
-import { ja } from "date-fns/locale";
-import { ArrowLeft, Link2, PencilLine } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Link2, Loader2, PencilLine, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { CompanyResearchStatusBadge } from "@/components/CompanyResearchStatusBadge";
+import { Progress } from "@/components/ui/progress";
+import type { AiMatchingResult } from "@shared/aiMatching";
+import { toMatchingProfile } from "@/lib/aiMatching";
+import { toast } from "sonner";
+import { formatDate } from "@/lib/date";
 
 const sections = [
   {
@@ -65,8 +69,24 @@ export default function CompanyResearchDetail() {
     { id: researchId },
     { enabled: researchId > 0 },
   );
+  const { data: profileData, isLoading: isProfileLoading } = trpc.profile.get.useQuery();
+  const [matchResult, setMatchResult] = useState<AiMatchingResult | null>(null);
 
-  if (isLoading) {
+  useEffect(() => {
+    setMatchResult(null);
+  }, [researchId]);
+
+  const matchMutation = trpc.ai.matchProfileToCompany.useMutation({
+    onSuccess: (result) => {
+      setMatchResult(result);
+      toast.success("AIマッチング結果を取得しました");
+    },
+    onError: (error) => {
+      toast.error("AIマッチングに失敗しました: " + error.message);
+    },
+  });
+
+  if (isLoading || isProfileLoading) {
     return <div className="text-center py-12 text-muted-foreground">読み込み中...</div>;
   }
 
@@ -75,6 +95,24 @@ export default function CompanyResearchDetail() {
   }
 
   const displayName = research.linkedCompanyName || research.companyName;
+  const savedProfile = profileData?.profile ?? null;
+
+  const handleRunMatching = () => {
+    if (!savedProfile) {
+      toast.error("マイプロフィールを保存してください", {
+        description: "プロフィールページで入力・保存するとAIマッチングに利用できます。",
+      });
+      return;
+    }
+    if (!researchId) {
+      toast.error("企業研究のIDが不正です");
+      return;
+    }
+    matchMutation.mutate({
+      companyResearchId: researchId,
+      profile: toMatchingProfile(savedProfile),
+    });
+  };
 
   return (
     <div className="relative -m-4 bg-gradient-to-br from-primary/10 via-background to-background p-4 md:p-6 lg:p-8">
@@ -119,10 +157,62 @@ export default function CompanyResearchDetail() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              最終更新: {research.updatedAt ? format(new Date(research.updatedAt), "yyyy/MM/dd HH:mm", { locale: ja }) : "—"}
+              最終更新: {formatDate(research.updatedAt, "yyyy/MM/dd HH:mm")}
             </p>
           </div>
         </div>
+
+        <Card className="border-none bg-gradient-to-r from-primary/10 via-white to-emerald-50 shadow-sm ring-1 ring-border/50 backdrop-blur dark:from-primary/5 dark:via-slate-900/60 dark:to-emerald-900/20">
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-primary ring-1 ring-primary/20 dark:bg-slate-900/60">
+                <Sparkles className="h-4 w-4" />
+                <span>AIフィット診断</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                保存済みのマイプロフィールとこの企業研究をもとに、フィット度と次のアクションを提案します。
+              </p>
+              {!savedProfile && (
+                <p className="text-xs text-muted-foreground">
+                  プロフィールページで基本情報を保存すると、より正確に判定できます。
+                </p>
+              )}
+            </div>
+            <Button
+              onClick={handleRunMatching}
+              disabled={matchMutation.isPending || !researchId}
+              className="gap-2 bg-gradient-to-r from-primary to-blue-500 text-primary-foreground shadow-lg shadow-primary/20"
+            >
+              {matchMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  分析中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  AIマッチングを実行
+                </>
+              )}
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {matchResult ? (
+              <MatchResult result={matchResult} />
+            ) : (
+              <div className="rounded-lg border border-dashed border-border/70 bg-white/70 p-4 text-sm text-foreground dark:bg-slate-900/60">
+                <div className="flex flex-col gap-2 text-muted-foreground">
+                  <span>「AIマッチングを実行」を押すと、以下の情報を元にJSON形式の診断結果を生成します。</span>
+                  <ul className="list-disc space-y-1 pl-5">
+                    <li>マイプロフィール（強み・弱み・働き方の好みなど）</li>
+                    <li>この企業研究の回答内容</li>
+                  </ul>
+                  <span className="text-xs">結果は画面上でそのまま確認できます。</span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="border-none bg-white/80 shadow-sm ring-1 ring-border/50 backdrop-blur dark:bg-slate-900/70">
           <CardHeader>
@@ -170,6 +260,125 @@ export default function CompanyResearchDetail() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function MatchResult({ result }: { result: AiMatchingResult }) {
+  const levelTheme: Record<AiMatchingResult["fitLevel"], { badge: string; label: string }> = {
+    high: { badge: "bg-emerald-100 text-emerald-800 border-emerald-200", label: "High fit" },
+    middle: { badge: "bg-amber-100 text-amber-800 border-amber-200", label: "Middle fit" },
+    low: { badge: "bg-rose-100 text-rose-800 border-rose-200", label: "Low fit" },
+  };
+  const theme = levelTheme[result.fitLevel] || levelTheme.middle;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border/60 bg-white/80 p-4 shadow-sm dark:bg-slate-900/60">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">総合フィット度</p>
+            <div className="flex items-center gap-3">
+              <span className="text-4xl font-bold text-foreground">{result.totalScore}</span>
+              <Badge variant="outline" className={`${theme.badge} border`}>
+                {theme.label}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">{result.summary}</p>
+          </div>
+          <div className="rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            モデル判定: <span className="font-semibold text-foreground uppercase">{result.fitLevel}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-3 rounded-lg border border-border/60 bg-white/80 p-4 dark:bg-slate-900/60">
+          <p className="text-sm font-medium text-foreground">サブスコア</p>
+          <ScoreRow label="価値観" value={result.scores.valuesFit} />
+          <ScoreRow label="組織風土・働き方" value={result.scores.cultureFit} />
+          <ScoreRow label="スキル・得意分野" value={result.scores.skillFit} />
+          <ScoreRow label="志望動機・興味" value={result.scores.motivationFit} />
+        </div>
+
+        <div className="space-y-4 rounded-lg border border-border/60 bg-white/80 p-4 dark:bg-slate-900/60">
+          <div className="space-y-2">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-200">
+              <Sparkles className="h-4 w-4" />
+              マッチしているポイント
+            </p>
+            {result.strongPoints.length > 0 ? (
+              <ul className="space-y-1 text-sm text-foreground">
+                {result.strongPoints.map((point, idx) => (
+                  <li key={`${point}-${idx}`} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">まだ特筆すべきマッチポイントはありません。</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4" />
+              ギャップ・注意点
+            </p>
+            {result.weakPoints.length > 0 ? (
+              <ul className="space-y-1 text-sm text-foreground">
+                {result.weakPoints.map((point, idx) => (
+                  <li key={`${point}-${idx}`} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">大きな懸念点の記載はありません。</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-border/60 bg-white/80 p-4 dark:bg-slate-900/60">
+        <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <Sparkles className="h-4 w-4 text-primary" />
+          今後のアクション
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1 rounded-md bg-muted/50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">選考で意識すること</p>
+            <p className="text-sm text-foreground leading-relaxed">{result.advice.selection}</p>
+          </div>
+          <div className="space-y-2 rounded-md bg-muted/50 p-3">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">追加リサーチ</p>
+              <p className="text-sm text-foreground leading-relaxed">{result.advice.research}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">聞いてみる質問</p>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
+                {result.advice.questionsToAsk.map((q, idx) => (
+                  <li key={`${q}-${idx}`}>{q}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScoreRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-foreground">{label}</span>
+        <span className="text-muted-foreground">{value}</span>
+      </div>
+      <Progress value={value} />
     </div>
   );
 }

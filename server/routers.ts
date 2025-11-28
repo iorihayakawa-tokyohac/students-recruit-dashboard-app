@@ -1,4 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
+import type { MatchingProfile } from "@shared/aiMatching";
+import type { ProfileData } from "@shared/profile";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
@@ -28,6 +30,53 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
+  }),
+
+  ai: router({
+    matchProfileToCompany: protectedProcedure
+      .input((val: unknown) => {
+        if (typeof val !== "object" || val === null) throw new Error("Invalid input");
+        const data = val as { profile?: MatchingProfile; companyResearchId?: number };
+        if (!data.profile || typeof data.profile !== "object") {
+          throw new Error("profile is required");
+        }
+        if (typeof data.companyResearchId !== "number") {
+          throw new Error("companyResearchId is required");
+        }
+        if (typeof (data.profile as any).basic?.name !== "string") {
+          throw new Error("profile.basic.name is required");
+        }
+        return { profile: data.profile, companyResearchId: data.companyResearchId };
+      })
+      .mutation(async ({ ctx, input }) => {
+        const { getCompanyResearchById } = await import("./db");
+        const research = await getCompanyResearchById(input.companyResearchId, ctx.user.id);
+        if (!research) {
+          throw new Error("Company research not found");
+        }
+        const { runAiMatching } = await import("./services/aiMatching");
+        return runAiMatching(input.profile, research);
+      }),
+  }),
+
+  profile: router({
+    get: protectedProcedure.query(async ({ ctx }) => {
+      const { getProfileByUserId } = await import("./db");
+      const existing = await getProfileByUserId(ctx.user.id);
+      return existing
+        ? { profile: existing.profile, updatedAt: existing.updatedAt }
+        : null;
+    }),
+    save: protectedProcedure
+      .input((val: unknown) => {
+        if (typeof val !== "object" || val === null) throw new Error("Invalid input");
+        return { profile: val as ProfileData };
+      })
+      .mutation(async ({ ctx, input }) => {
+        const { upsertProfile } = await import("./db");
+        const record = await upsertProfile(ctx.user.id, input.profile);
+        return { profile: record.profile, updatedAt: record.updatedAt };
+      }),
   }),
 
   // 企業管理

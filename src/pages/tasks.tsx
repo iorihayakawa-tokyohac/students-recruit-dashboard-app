@@ -28,6 +28,9 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
+import { formatDate } from "@/lib/date";
 
 function Tasks() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -42,6 +45,7 @@ function Tasks() {
   const { data: tasks, isLoading: tasksLoading } = trpc.tasks.list.useQuery();
   const { data: companies } = trpc.companies.list.useQuery();
   const utils = trpc.useUtils();
+  const [location, setLocation] = useLocation();
 
   const createMutation = trpc.tasks.create.useMutation({
     onSuccess: () => {
@@ -73,6 +77,19 @@ function Tasks() {
       toast.error("タスクの削除に失敗しました: " + error.message);
     },
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const shouldOpen = url.hash === "#new" || url.searchParams.get("new") === "1";
+    if (shouldOpen) {
+      setIsCreateDialogOpen(true);
+      // Clean the hash/query so refresh won't reopen
+      url.hash = "";
+      url.searchParams.delete("new");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [location]);
 
   const handleCreate = () => {
     if (!newTask.title.trim()) {
@@ -301,7 +318,7 @@ function Tasks() {
                           {task.dueDate && (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                               <CalendarDays className="h-3.5 w-3.5" />
-                              {format(new Date(task.dueDate), "M/d (E) HH:mm", { locale: ja })}
+                              {formatDate(task.dueDate, "M/d (E) HH:mm")}
                             </span>
                           )}
                         </div>

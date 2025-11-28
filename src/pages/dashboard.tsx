@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { differenceInCalendarDays, format, formatDistanceToNow, isPast, isToday, isTomorrow } from "date-fns";
+import { differenceInCalendarDays, formatDistanceToNow, isPast, isToday, isTomorrow } from "date-fns";
 import { ja } from "date-fns/locale";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -26,6 +26,8 @@ import {
   Clock,
   GraduationCap,
 } from "lucide-react";
+import { useLocation } from "wouter";
+import { formatDate } from "@/lib/date";
 
 type Tone = "muted" | "warning" | "danger" | "positive";
 
@@ -65,11 +67,12 @@ function dueState(dueDate?: Date | string | null): { label: string; tone: Tone }
   if (diff === 1) return { label: "明日まで", tone: "warning" };
   if (diff < 0) return { label: `${Math.abs(diff)}日超過`, tone: "danger" };
   if (diff <= 3) return { label: `あと${diff}日`, tone: "warning" };
-  return { label: format(date, "M/d (E)", { locale: ja }), tone: "muted" };
+  return { label: formatDate(date, "M/d (E)"), tone: "muted" };
 }
 
 function DashboardContent() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery();
   const { data: companies, isLoading: companiesLoading } = trpc.companies.list.useQuery();
   const { data: tasks, isLoading: tasksLoading } = trpc.tasks.list.useQuery();
@@ -179,7 +182,10 @@ function DashboardContent() {
               <Bell className="h-4 w-4" />
               直近の予定 {upcomingEventList.length} 件
             </Badge>
-            <Button className="gap-2 bg-gradient-to-r from-primary to-blue-500 text-primary-foreground shadow-lg shadow-primary/20">
+            <Button
+              className="gap-2 bg-gradient-to-r from-primary to-blue-500 text-primary-foreground shadow-lg shadow-primary/20"
+              onClick={() => setLocation("/tasks#new")}
+            >
               今日の進捗を追加
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -277,6 +283,7 @@ function DashboardContent() {
                 const { label, tone } = dueState(task.dueDate);
                 const statusLabel =
                   task.status === "in_progress" ? "進行中" : task.status === "open" ? "未着手" : "完了";
+                const dueDateValue = asDate(task.dueDate);
                 return (
                   <div
                     key={task.id}
@@ -308,10 +315,10 @@ function DashboardContent() {
                           <Clock className="h-3.5 w-3.5" />
                           {label}
                         </span>
-                        {task.dueDate && (
+                        {dueDateValue && (
                           <span className="inline-flex items-center gap-1">
                             <CalendarDays className="h-3.5 w-3.5" />
-                            {format(new Date(task.dueDate), "M/d (E) HH:mm", { locale: ja })}
+                            {formatDate(dueDateValue, "M/d (E) HH:mm")}
                           </span>
                         )}
                       </div>
@@ -380,7 +387,7 @@ function DashboardContent() {
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <CalendarDays className="h-3.5 w-3.5" />
-                            {format(startAt, "M/d (E) HH:mm", { locale: ja })}
+                            {formatDate(startAt, "M/d (E) HH:mm")}
                           </span>
                           {company && (
                             <span className="inline-flex items-center gap-1">
@@ -487,7 +494,7 @@ function DashboardContent() {
                       )}
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>最終更新 {company.updatedAt ? format(new Date(company.updatedAt), "M/d (E)", { locale: ja }) : "—"}</span>
+                      <span>最終保存 {formatDate(company.updatedAt, "M/d (E)")}</span>
                       <span className="font-medium text-foreground">{company.priority ? `志望度 ${company.priority}` : ""}</span>
                     </div>
                   </div>

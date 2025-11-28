@@ -209,14 +209,36 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+const resolveApiUrl = () => {
+  const base = ENV.forgeApiUrl?.trim() ?? "";
+  if (base.length > 0) {
+    if (/\/v1\/chat\/completions$/.test(base)) return base;
+    return `${base.replace(/\/$/, "")}/v1/chat/completions`;
+  }
+  return "https://api.openai.com/v1/chat/completions";
+};
+
+const isOpenAiEndpoint = () => resolveApiUrl().includes("openai.com");
+
+const resolveModel = () => {
+  if (ENV.forgeModel?.trim()) return ENV.forgeModel.trim();
+  const apiUrl = resolveApiUrl();
+  if (apiUrl.includes("openai.com")) return "gpt-4o-mini";
+  return "gemini-2.5-flash";
+};
+
+const resolveMaxTokens = (requested?: number) => {
+  if (isOpenAiEndpoint()) {
+    const cap = 16_000; // gpt-4o-mini completion token limit
+    if (requested && requested > 0) return Math.min(requested, cap);
+    return 12_000;
+  }
+  return requested && requested > 0 ? requested : 32_768;
+};
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+    throw new Error("BUILT_IN_FORGE_API_KEY or OPENAI_API_KEY is not configured");
   }
 };
 
@@ -272,15 +294,17 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     messages,
     tools,
     toolChoice,
-    tool_choice,
-    outputSchema,
-    output_schema,
-    responseFormat,
-    response_format,
+  tool_choice,
+  outputSchema,
+  output_schema,
+  responseFormat,
+  response_format,
+  maxTokens,
+  max_tokens,
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: resolveModel(),
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,9 +320,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  const requestedMaxTokens = maxTokens ?? max_tokens;
+  payload.max_tokens = resolveMaxTokens(requestedMaxTokens);
+  if (!isOpenAiEndpoint()) {
+    payload.thinking = {
+      budget_tokens: 128,
+    };
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({

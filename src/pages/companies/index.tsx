@@ -31,11 +31,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
-import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/date";
 
 function Companies() {
   const [, setLocation] = useLocation();
@@ -341,9 +340,7 @@ function Companies() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-foreground">
-                          {company.nextDeadline
-                            ? format(new Date(company.nextDeadline), "M/d (E)", { locale: ja })
-                            : "—"}
+                          {formatDate(company.nextDeadline, "M/d (E)", "—")}
                         </TableCell>
                         <TableCell className="text-right space-x-2">
                           <Button

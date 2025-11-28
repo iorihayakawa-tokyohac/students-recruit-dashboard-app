@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,48 +27,17 @@ import {
   Tag,
   Trash2,
   User,
-  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type TraitKind = "personality" | "strength" | "weakness" | "work_style";
-
-type Trait = {
-  id: string;
-  kind: TraitKind;
-  label: string;
-  description?: string;
-};
-
-type Interest = {
-  id: string;
-  subject: string;
-  detail?: string;
-};
-
-type CustomField = {
-  id: string;
-  question: string;
-  answer: string;
-  order: number;
-};
-
-type ProfileData = {
-  fullName: string;
-  nickname: string;
-  prefecture: string;
-  dateOfBirth?: string;
-  oneLiner: string;
-  personalityNote: string;
-  strengthsNote: string;
-  weaknessesNote: string;
-  workStyleNote: string;
-  interestsNote: string;
-  otherNote: string;
-  traits: Trait[];
-  interests: Interest[];
-  customFields: CustomField[];
-};
+import { trpc } from "@/lib/trpc";
+import { formatDate } from "@/lib/date";
+import {
+  type CustomField,
+  type Interest,
+  type ProfileData,
+  type Trait,
+  type TraitKind,
+} from "@shared/profile";
 
 type SectionKey = "basics" | "personality" | "custom";
 
@@ -133,9 +100,6 @@ const traitPresets: Record<TraitKind, string[]> = {
 
 const interestPresets = ["数学", "物理", "化学", "情報工学", "デザイン", "マーケティング", "人材・組織", "国際関係"];
 
-const STORAGE_SAVED = "my-profile:saved";
-const STORAGE_DRAFT = "my-profile:draft";
-
 function createDefaultProfile(): ProfileData {
   return {
     fullName: "山田 太郎",
@@ -179,6 +143,28 @@ function createDefaultProfile(): ProfileData {
   };
 }
 
+function normalizeProfileData(input?: Partial<ProfileData>): ProfileData {
+  const base = createDefaultProfile();
+  return {
+    ...base,
+    ...input,
+    fullName: input?.fullName ?? base.fullName,
+    nickname: input?.nickname ?? base.nickname,
+    prefecture: input?.prefecture ?? base.prefecture,
+    dateOfBirth: input?.dateOfBirth ?? base.dateOfBirth,
+    oneLiner: input?.oneLiner ?? base.oneLiner,
+    personalityNote: input?.personalityNote ?? base.personalityNote,
+    strengthsNote: input?.strengthsNote ?? base.strengthsNote,
+    weaknessesNote: input?.weaknessesNote ?? base.weaknessesNote,
+    workStyleNote: input?.workStyleNote ?? base.workStyleNote,
+    interestsNote: input?.interestsNote ?? base.interestsNote,
+    otherNote: input?.otherNote ?? base.otherNote,
+    traits: Array.isArray(input?.traits) ? input!.traits : base.traits,
+    interests: Array.isArray(input?.interests) ? input!.interests : base.interests,
+    customFields: Array.isArray(input?.customFields) ? input!.customFields : base.customFields,
+  };
+}
+
 function safeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -195,18 +181,21 @@ function isFutureDate(value?: string) {
 }
 
 function summarizeCompletion(profile: ProfileData) {
+  const traits = Array.isArray(profile.traits) ? profile.traits : [];
+  const interests = Array.isArray(profile.interests) ? profile.interests : [];
+  const customFields = Array.isArray(profile.customFields) ? profile.customFields : [];
   const checkpoints = [
     !!profile.fullName,
     !!profile.prefecture,
     !!profile.dateOfBirth,
     !!profile.oneLiner,
-    profile.traits.some(t => t.kind === "personality"),
-    profile.traits.some(t => t.kind === "strength"),
-    profile.traits.some(t => t.kind === "weakness"),
-    profile.traits.some(t => t.kind === "work_style"),
-    profile.interests.length > 0,
+    traits.some(t => t.kind === "personality"),
+    traits.some(t => t.kind === "strength"),
+    traits.some(t => t.kind === "weakness"),
+    traits.some(t => t.kind === "work_style"),
+    interests.length > 0,
     !!profile.otherNote,
-    profile.customFields.length > 0,
+    customFields.length > 0,
   ];
   const done = checkpoints.filter(Boolean).length;
   const percent = Math.round((done / checkpoints.length) * 100);
@@ -218,9 +207,7 @@ export default function MyProfilePage() {
   const [profile, setProfile] = useState<ProfileData>(() => createDefaultProfile());
   const [draft, setDraft] = useState<ProfileData>(() => createDefaultProfile());
   const [editingSection, setEditingSection] = useState<SectionKey>("basics");
-  const [isLoaded, setIsLoaded] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-  const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [newTraitLabel, setNewTraitLabel] = useState<Record<TraitKind, string>>({
     personality: "",
     strength: "",
@@ -228,44 +215,43 @@ export default function MyProfilePage() {
     work_style: "",
   });
   const [interestInput, setInterestInput] = useState({ subject: "", detail: "" });
+  const [initialized, setInitialized] = useState(false);
+  const profileQuery = trpc.profile.get.useQuery(undefined, {
+  });
+  const saveProfileMutation = trpc.profile.save.useMutation({
+    onSuccess: (result) => {
+      const saved = normalizeProfileData(result.profile as ProfileData);
+      setProfile(saved);
+      setDraft(saved);
+      setLastSavedAt(result.updatedAt ? new Date(result.updatedAt) : new Date());
+      toast.success("プロフィールを保存しました");
+    },
+    onError: (error) => {
+      toast.error("プロフィールの保存に失敗しました: " + error.message);
+    },
+  });
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedRaw = localStorage.getItem(STORAGE_SAVED);
-    const draftRaw = localStorage.getItem(STORAGE_DRAFT);
-    if (savedRaw) {
-      try {
-        const parsed = JSON.parse(savedRaw) as ProfileData;
-        setProfile(parsed);
-        setDraft(parsed);
-      } catch {
-        // ignore broken cache
-      }
+    if (profileQuery.data && !initialized) {
+      const loaded = normalizeProfileData(profileQuery.data.profile ?? undefined);
+      setProfile(loaded);
+      setDraft(loaded);
+      setLastSavedAt(profileQuery.data.updatedAt ? new Date(profileQuery.data.updatedAt) : null);
+      setInitialized(true);
     }
-    if (draftRaw) {
-      try {
-        const parsed = JSON.parse(draftRaw) as ProfileData;
-        setDraft(parsed);
-      } catch {
-        // ignore broken cache
-      }
+    if (!initialized && !profileQuery.isLoading && !profileQuery.data) {
+      const fallback = createDefaultProfile();
+      setProfile(fallback);
+      setDraft(fallback);
+      setInitialized(true);
     }
-    setIsLoaded(true);
-  }, []);
+  }, [initialized, profileQuery.data, profileQuery.isLoading]);
 
   useEffect(() => {
-    if (!isLoaded) return;
-    setAutoSaveState("saving");
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_DRAFT, JSON.stringify(draft));
-        setAutoSaveState("saved");
-      } catch {
-        setAutoSaveState("idle");
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [draft, isLoaded]);
+    if (profileQuery.error) {
+      toast.error("プロフィールの取得に失敗しました: " + profileQuery.error.message);
+    }
+  }, [profileQuery.error]);
 
   const hasUnsaved = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(profile),
@@ -282,15 +268,16 @@ export default function MyProfilePage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [hasUnsaved]);
 
-  const completion = useMemo(() => summarizeCompletion(profile), [profile]);
+  const completion = useMemo(() => summarizeCompletion(draft), [draft]);
 
   const toggleTrait = (kind: TraitKind, label: string) => {
     setDraft(prev => {
-      const exists = prev.traits.some(t => t.kind === kind && t.label === label);
-      const traits = exists
-        ? prev.traits.filter(t => !(t.kind === kind && t.label === label))
-        : [...prev.traits, { id: safeId(), kind, label }];
-      return { ...prev, traits };
+      const traits = Array.isArray(prev.traits) ? prev.traits : [];
+      const exists = traits.some(t => t.kind === kind && t.label === label);
+      const nextTraits = exists
+        ? traits.filter(t => !(t.kind === kind && t.label === label))
+        : [...traits, { id: safeId(), kind, label }];
+      return { ...prev, traits: nextTraits };
     });
   };
 
@@ -307,11 +294,12 @@ export default function MyProfilePage() {
 
   const toggleInterest = (subject: string) => {
     setDraft(prev => {
-      const exists = prev.interests.some(i => i.subject === subject);
-      const interests = exists
-        ? prev.interests.filter(i => i.subject !== subject)
-        : [...prev.interests, { id: safeId(), subject, detail: "" }];
-      return { ...prev, interests };
+      const interests = Array.isArray(prev.interests) ? prev.interests : [];
+      const exists = interests.some(i => i.subject === subject);
+      const nextInterests = exists
+        ? interests.filter(i => i.subject !== subject)
+        : [...interests, { id: safeId(), subject, detail: "" }];
+      return { ...prev, interests: nextInterests };
     });
   };
 
@@ -321,13 +309,16 @@ export default function MyProfilePage() {
       toast.error("好きな教科・分野を入力してください");
       return;
     }
-    setDraft(prev => ({
-      ...prev,
-      interests: [
-        ...prev.interests,
-        { id: safeId(), subject, detail: interestInput.detail.trim() },
-      ],
-    }));
+    setDraft(prev => {
+      const interests = Array.isArray(prev.interests) ? prev.interests : [];
+      return {
+        ...prev,
+        interests: [
+          ...interests,
+          { id: safeId(), subject, detail: interestInput.detail.trim() },
+        ],
+      };
+    });
     setInterestInput({ subject: "", detail: "" });
     toast.success("好きな分野を追加しました");
   };
@@ -378,6 +369,8 @@ export default function MyProfilePage() {
 
   const validateSection = (section: SectionKey) => {
     const errors: string[] = [];
+    const traits = Array.isArray(draft.traits) ? draft.traits : [];
+    const customFields = Array.isArray(draft.customFields) ? draft.customFields : [];
     if (section === "basics") {
       if (!draft.fullName.trim()) errors.push("名前は必須です");
       if (!draft.prefecture) errors.push("在住都道府県を選択してください");
@@ -396,18 +389,18 @@ export default function MyProfilePage() {
       if (longTexts.some(text => text.length > 1000)) {
         errors.push("テキストは1000文字以内にしてください");
       }
-      if (!draft.traits.some(t => t.kind === "personality")) {
+      if (!traits.some(t => t.kind === "personality")) {
         errors.push("性格タグを1つ以上選んでください");
       }
-      if (!draft.traits.some(t => t.kind === "strength")) {
+      if (!traits.some(t => t.kind === "strength")) {
         errors.push("長所を1つ以上選んでください");
       }
-      if (draft.traits.some(t => t.label.length > 50)) {
+      if (traits.some(t => t.label.length > 50)) {
         errors.push("タグは50文字以内にしてください");
       }
     }
     if (section === "custom") {
-      draft.customFields.forEach(field => {
+      customFields.forEach(field => {
         if ((!field.question && field.answer) || (field.question && !field.answer)) {
           errors.push("カスタム項目は質問と回答の両方を入力してください");
         }
@@ -418,58 +411,58 @@ export default function MyProfilePage() {
     return errors;
   };
 
-  const saveSection = (section: SectionKey) => {
+  const persistProfile = async (next: ProfileData) => {
+    try {
+      const normalized = normalizeProfileData(next);
+      await saveProfileMutation.mutateAsync({ profile: normalized });
+    } catch {
+      // onError handler shows toast
+    }
+  };
+
+  const saveSection = async (section: SectionKey) => {
     const errors = validateSection(section);
     if (errors.length > 0) {
       toast.error(errors[0]);
       return;
     }
-    setProfile(prev => {
-      let next = prev;
-      if (section === "basics") {
-        next = {
-          ...prev,
-          fullName: draft.fullName.trim(),
-          nickname: draft.nickname.trim(),
-          prefecture: draft.prefecture,
-          dateOfBirth: draft.dateOfBirth,
-        };
-      }
-      if (section === "personality") {
-        next = {
-          ...prev,
-          oneLiner: draft.oneLiner.trim(),
-          personalityNote: draft.personalityNote,
-          strengthsNote: draft.strengthsNote,
-          weaknessesNote: draft.weaknessesNote,
-          workStyleNote: draft.workStyleNote,
-          interestsNote: draft.interestsNote,
-          otherNote: draft.otherNote,
-          traits: draft.traits,
-          interests: draft.interests,
-        };
-      }
-      if (section === "custom") {
-        next = {
-          ...prev,
-          customFields: draft.customFields
-            .slice()
-            .sort((a, b) => a.order - b.order)
-            .map((field, idx) => ({ ...field, order: idx })),
-        };
-      }
-      try {
-        localStorage.setItem(STORAGE_SAVED, JSON.stringify(next));
-        setLastSavedAt(new Date());
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-    toast.success("セクションを保存しました");
+    let next = profile;
+    if (section === "basics") {
+      next = {
+        ...profile,
+        fullName: draft.fullName.trim(),
+        nickname: draft.nickname.trim(),
+        prefecture: draft.prefecture,
+        dateOfBirth: draft.dateOfBirth,
+      };
+    }
+    if (section === "personality") {
+      next = {
+        ...profile,
+        oneLiner: draft.oneLiner.trim(),
+        personalityNote: draft.personalityNote,
+        strengthsNote: draft.strengthsNote,
+        weaknessesNote: draft.weaknessesNote,
+        workStyleNote: draft.workStyleNote,
+        interestsNote: draft.interestsNote,
+        otherNote: draft.otherNote,
+        traits: draft.traits,
+        interests: draft.interests,
+      };
+    }
+    if (section === "custom") {
+      next = {
+        ...profile,
+        customFields: draft.customFields
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((field, idx) => ({ ...field, order: idx })),
+      };
+    }
+    await persistProfile(next);
   };
 
-  const saveAll = () => {
+  const saveAll = async () => {
     const allErrors = ["basics", "personality", "custom"]
       .map(section => validateSection(section as SectionKey))
       .flat();
@@ -477,14 +470,7 @@ export default function MyProfilePage() {
       toast.error(allErrors[0]);
       return;
     }
-    setProfile(draft);
-    try {
-      localStorage.setItem(STORAGE_SAVED, JSON.stringify(draft));
-      setLastSavedAt(new Date());
-    } catch {
-      // ignore
-    }
-    toast.success("プロフィールを保存しました");
+    await persistProfile(draft);
   };
 
   const resetDraft = () => {
@@ -519,6 +505,10 @@ export default function MyProfilePage() {
     };
   }, [profile]);
 
+  if (profileQuery.isLoading) {
+    return <div className="text-center py-12 text-muted-foreground">プロフィールを読み込み中...</div>;
+  }
+
   return (
     <div className="relative -m-4 bg-gradient-to-br from-primary/10 via-background to-background p-4 md:p-6 lg:p-8">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -552,12 +542,6 @@ export default function MyProfilePage() {
                   未保存の変更あり
                 </span>
               )}
-              {autoSaveState === "saved" && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-100">
-                  <Wand2 className="h-3.5 w-3.5" />
-                  下書きを自動保存しました
-                </span>
-              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -572,7 +556,8 @@ export default function MyProfilePage() {
             </Button>
             <Button
               className="gap-2 bg-gradient-to-r from-primary to-blue-500 text-primary-foreground shadow-lg shadow-primary/20"
-              onClick={saveAll}
+              onClick={() => void saveAll()}
+              disabled={saveProfileMutation.isPending}
             >
               <Save className="h-4 w-4" />
               全体を保存
@@ -613,7 +598,7 @@ export default function MyProfilePage() {
                   label="生年月日"
                   value={
                     profile.dateOfBirth
-                      ? `${format(new Date(profile.dateOfBirth), "yyyy年M月d日", { locale: ja })}`
+                      ? `${formatDate(profile.dateOfBirth, "yyyy年M月d日")}`
                       : "未設定"
                   }
                 />
@@ -723,12 +708,12 @@ export default function MyProfilePage() {
                   <CardTitle className="text-base font-semibold text-foreground">編集パネル</CardTitle>
                   {lastSavedAt && (
                     <span className="text-xs text-muted-foreground">
-                      最終保存: {format(lastSavedAt, "M/d HH:mm", { locale: ja })}
+                      最終保存: {formatDate(lastSavedAt, "M/d HH:mm")}
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  変更は下書きに自動保存されます。セクションごとに保存すると表示側に反映されます。
+                  編集内容はこの画面内で保持されます。セクション/全体の保存ボタンでサーバーに反映します。
                 </p>
               </CardHeader>
               <CardContent className="pt-0">
@@ -796,7 +781,7 @@ export default function MyProfilePage() {
                         rows={3}
                       />
                     </Field>
-                    <Button className="w-full gap-2" onClick={() => saveSection("basics")}>
+                    <Button className="w-full gap-2" onClick={() => void saveSection("basics")} disabled={saveProfileMutation.isPending}>
                       <Save className="h-4 w-4" />
                       このセクションを保存
                     </Button>
@@ -967,7 +952,7 @@ export default function MyProfilePage() {
                       />
                     </Field>
 
-                    <Button className="w-full gap-2" onClick={() => saveSection("personality")}>
+                    <Button className="w-full gap-2" onClick={() => void saveSection("personality")} disabled={saveProfileMutation.isPending}>
                       <Save className="h-4 w-4" />
                       このセクションを保存
                     </Button>
@@ -1055,7 +1040,7 @@ export default function MyProfilePage() {
                           </div>
                         ))}
                     </div>
-                    <Button className="w-full gap-2" onClick={() => saveSection("custom")}>
+                    <Button className="w-full gap-2" onClick={() => void saveSection("custom")} disabled={saveProfileMutation.isPending}>
                       <Save className="h-4 w-4" />
                       このセクションを保存
                     </Button>

@@ -12,8 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { BellRing, CalendarClock, Mail, RefreshCw, Save, Trash2 } from "lucide-react";
 import { format } from "date-fns";
-import { ja } from "date-fns/locale";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/date";
 
 const eventTypeOptions = [
   { value: "es_deadline", label: "ES提出" },
@@ -415,13 +415,15 @@ function Events() {
                     .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
                     .map((event) => {
                       const companyName = companies?.find(c => c.id === event.companyId)?.name;
+                      const startAt = formatDate(event.startAt, "M/d(E) HH:mm");
+                      const endAt = event.endAt ? formatDate(event.endAt, "M/d(E) HH:mm") : null;
                       return (
                         <TableRow key={event.id} className="hover:bg-muted/40">
                           <TableCell className="text-foreground">
-                            <div className="font-medium">{format(new Date(event.startAt), "M/d(E) HH:mm", { locale: ja })}</div>
-                            {event.endAt && (
+                            <div className="font-medium">{startAt}</div>
+                            {endAt && (
                               <p className="text-xs text-muted-foreground">
-                                〜 {format(new Date(event.endAt), "M/d(E) HH:mm", { locale: ja })}
+                                〜 {endAt}
                               </p>
                             )}
                           </TableCell>

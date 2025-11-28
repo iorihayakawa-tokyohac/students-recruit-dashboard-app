@@ -12,6 +12,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { Router } from "wouter";
+import Head from "next/head";
+import { APP_LOGO, APP_TITLE } from "@/const";
 
 const createStaticLocationHook = (path: string) => () => {
   const [location] = useState(path);
@@ -66,19 +68,27 @@ export default function App({ Component, pageProps }: AppProps) {
   );
 
   return (
-    <Router hook={locationHook}>
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>
-          <ErrorBoundary>
-            <ThemeProvider defaultTheme="dark">
-              <TooltipProvider>
-                <Toaster />
-                <Component {...pageProps} />
-              </TooltipProvider>
-            </ThemeProvider>
-          </ErrorBoundary>
-        </QueryClientProvider>
-      </trpc.Provider>
-    </Router>
+    <>
+      <Head>
+        <title>{APP_TITLE}</title>
+        <meta name="description" content="StepNavi - 就活の企業管理・タスク管理・研究メモをまとめて扱えるダッシュボード" />
+        <link rel="icon" href={APP_LOGO} />
+        <link rel="apple-touch-icon" href={APP_LOGO} />
+      </Head>
+      <Router hook={locationHook}>
+        <trpc.Provider client={trpcClient} queryClient={queryClient}>
+          <QueryClientProvider client={queryClient}>
+            <ErrorBoundary>
+              <ThemeProvider defaultTheme="dark">
+                <TooltipProvider>
+                  <Toaster />
+                  <Component {...pageProps} />
+                </TooltipProvider>
+              </ThemeProvider>
+            </ErrorBoundary>
+          </QueryClientProvider>
+        </trpc.Provider>
+      </Router>
+    </>
   );
 }

@@ -21,6 +21,7 @@ import type {
   RoadmapStep,
   RoadmapInstance,
 } from "../drizzle/schema";
+import type { ProfileData, ProfileRecord } from "@shared/profile";
 import { ENV } from "./_core/env";
 import { getFirebaseAdminApp } from "./_core/firebaseAdmin";
 import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
@@ -39,7 +40,8 @@ type CollectionName =
   | "students"
   | "roadmapDefinitions"
   | "roadmapSteps"
-  | "roadmapInstances";
+  | "roadmapInstances"
+  | "profiles";
 
 function db() {
   return getFirestore(getFirebaseAdminApp());
@@ -117,6 +119,28 @@ async function assertCompanyOwnership(userId: number, companyId: number) {
   if (!company || company.userId !== userId) {
     throw new Error("Company not found");
   }
+}
+
+// Profiles
+export async function getProfileByUserId(userId: number): Promise<ProfileRecord | null> {
+  const doc = await db().collection("profiles").doc(String(userId)).get();
+  if (!doc.exists) return null;
+  return normalizeDoc<ProfileRecord>(doc);
+}
+
+export async function upsertProfile(userId: number, profile: ProfileData): Promise<ProfileRecord> {
+  const firestore = db();
+  const existing = await firestore.collection("profiles").doc(String(userId)).get();
+  const nowValue = now();
+  const payload: ProfileRecord = {
+    id: userId,
+    userId,
+    profile,
+    createdAt: existing.exists ? toDate((existing.data() as any).createdAt) ?? nowValue : nowValue,
+    updatedAt: nowValue,
+  };
+  await firestore.collection("profiles").doc(String(userId)).set(payload);
+  return payload;
 }
 
 // Users

@@ -9,6 +9,21 @@ const rawCookieSecret = process.env.JWT_SECRET?.trim();
 const cookieSecret =
   rawCookieSecret && rawCookieSecret.length > 0 ? rawCookieSecret : "dev-cookie-secret";
 
+const rawForgeApiKey =
+  process.env.BUILT_IN_FORGE_API_KEY?.trim() ||
+  process.env.OPENAI_API_KEY?.trim() ||
+  "";
+
+const rawForgeApiUrl =
+  process.env.BUILT_IN_FORGE_API_URL?.trim() ||
+  process.env.OPENAI_BASE_URL?.trim() ||
+  process.env.OPENAI_API_BASE?.trim() ||
+  "";
+const rawForgeModel =
+  process.env.BUILT_IN_FORGE_MODEL?.trim() ||
+  process.env.OPENAI_MODEL?.trim() ||
+  "";
+
 export const ENV = {
   appId,
   cookieSecret,
@@ -16,8 +31,9 @@ export const ENV = {
   oAuthServerUrl,
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  forgeApiUrl: rawForgeApiUrl,
+  forgeApiKey: rawForgeApiKey,
+  forgeModel: rawForgeModel,
 };
 
 export const isOAuthConfigured = oAuthServerUrl.length > 0;
