@@ -1,54 +1,75 @@
 import type { ProfileData } from "@shared/profile";
 import type { MatchingProfile } from "@shared/aiMatching";
 
-const ensureArray = (values: string[], placeholder: string) => {
+const toSafeString = (value: unknown, fallback = "") =>
+  typeof value === "string" ? value : fallback;
+
+const toSafeList = <T>(value: T[] | null | undefined): T[] =>
+  Array.isArray(value) ? value : [];
+
+const ensureArray = (values: string[], placeholder = "未入力") => {
   const cleaned = values.map(v => v.trim()).filter(Boolean);
   return cleaned.length > 0 ? cleaned : [placeholder];
 };
 
-const splitToList = (text?: string | null) =>
-  (text ?? "")
+const splitToList = (text?: unknown) =>
+  toSafeString(text)
     .split(/\r?\n|、|，|・|;|；/)
     .map(item => item.trim())
     .filter(Boolean);
 
-const mergeNotes = (...notes: Array<string | undefined>) =>
+const mergeNotes = (...notes: Array<unknown>) =>
   notes
-    .map(note => note?.trim())
+    .map(note => toSafeString(note).trim())
     .filter(Boolean)
     .join(" / ");
 
 export function toMatchingProfile(profile: ProfileData): MatchingProfile {
+  const traits = toSafeList(profile.traits);
+  const interests = toSafeList(profile.interests);
+  const customFields = toSafeList(profile.customFields);
+  const primaryName = toSafeString(profile.fullName) || toSafeString(profile.nickname) || "未入力";
+
   const strengths = ensureArray(
-    profile.traits.filter(t => t.kind === "strength").map(t => t.label),
+    traits
+      .filter(t => t.kind === "strength")
+      .map(t => toSafeString(t.label))
+      .filter(Boolean),
     "強みは未入力（マイプロフィールで設定してください）",
   );
 
   const weaknesses = ensureArray(
-    profile.traits.filter(t => t.kind === "weakness").map(t => t.label),
+    traits
+      .filter(t => t.kind === "weakness")
+      .map(t => toSafeString(t.label))
+      .filter(Boolean),
     "弱みは未入力（マイプロフィールで設定してください）",
   );
 
   const favoriteSubjects = ensureArray(
-    profile.interests.map(interest =>
-      interest.detail ? `${interest.subject}（${interest.detail}）` : interest.subject
-    ),
+    interests.map(interest => {
+      const subject = toSafeString(interest.subject);
+      const detail = toSafeString((interest as any).detail);
+      return subject && detail ? `${subject}（${detail}）` : subject;
+    }).filter(Boolean),
     "好きな科目・分野は未入力",
   );
 
   const skills = ensureArray(
-    splitToList(profile.strengthsNote || profile.oneLiner),
+    splitToList(toSafeString(profile.strengthsNote) || toSafeString(profile.oneLiner)),
     "スキルメモは未入力",
   );
 
   const activities = ensureArray(
     [
       ...splitToList(profile.interestsNote),
-      ...profile.customFields
-        .filter(field => field.question || field.answer)
-        .map(field =>
-          [field.question, field.answer].filter(Boolean).join(": ").trim()
-        ),
+      ...customFields
+        .filter(field => toSafeString(field.question) || toSafeString(field.answer))
+        .map(field => {
+          const question = toSafeString(field.question);
+          const answer = toSafeString(field.answer);
+          return [question, answer].filter(Boolean).join(": ").trim();
+        }),
     ],
     "活動メモは未入力",
   );
@@ -58,23 +79,23 @@ export function toMatchingProfile(profile: ProfileData): MatchingProfile {
     "価値観メモは未入力";
 
   const workStylePreference =
-    profile.workStyleNote?.trim() ||
-    profile.personalityNote?.trim() ||
+    toSafeString(profile.workStyleNote).trim() ||
+    toSafeString(profile.personalityNote).trim() ||
     "働き方の希望は未入力";
 
-  const locationPreference = profile.prefecture || "希望勤務地は未入力";
+  const locationPreference = toSafeString(profile.prefecture) || "希望勤務地は未入力";
 
   return {
     basic: {
-      name: profile.fullName,
-      nickname: profile.nickname,
-      prefecture: profile.prefecture,
+      name: primaryName,
+      nickname: toSafeString(profile.nickname),
+      prefecture: toSafeString(profile.prefecture),
       university: "",
       faculty: "",
       grade: "",
     },
     personal: {
-      personality: profile.personalityNote || profile.oneLiner || "未入力",
+      personality: toSafeString(profile.personalityNote) || toSafeString(profile.oneLiner) || "未入力",
       strengths,
       weaknesses,
       values: valuesText,

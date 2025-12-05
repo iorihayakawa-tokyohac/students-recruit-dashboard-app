@@ -24,17 +24,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Clock, Trash2, Sparkles, CalendarDays } from "lucide-react";
-import { differenceInCalendarDays, format } from "date-fns";
-import { ja } from "date-fns/locale";
+import { differenceInCalendarDays } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { formatDate } from "@/lib/date";
+import { formatDate, toDate } from "@/lib/date";
 
 function Tasks() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dueFrom, setDueFrom] = useState<string>("");
+  const [dueTo, setDueTo] = useState<string>("");
   const [newTask, setNewTask] = useState({
     title: "",
     companyId: undefined as number | undefined,
@@ -107,6 +108,10 @@ function Tasks() {
     updateMutation.mutate({ id: taskId, status: newStatus as any });
   };
 
+  const handleStatusChange = (taskId: number, status: "open" | "in_progress" | "done") => {
+    updateMutation.mutate({ id: taskId, status });
+  };
+
   const handleDelete = (id: number) => {
     if (confirm("このタスクを削除しますか?")) {
       deleteMutation.mutate({ id });
@@ -116,10 +121,19 @@ function Tasks() {
   const filteredTasks = useMemo(
     () =>
       (tasks || []).filter((task) => {
+        const dueDate = toDate(task.dueDate);
+        if (dueFrom) {
+          const fromDate = toDate(dueFrom);
+          if (fromDate && (!dueDate || dueDate < fromDate)) return false;
+        }
+        if (dueTo) {
+          const toDateValue = toDate(dueTo);
+          if (toDateValue && (!dueDate || dueDate > toDateValue)) return false;
+        }
         if (statusFilter === "all") return true;
         return task.status === statusFilter;
       }),
-    [tasks, statusFilter]
+    [tasks, statusFilter, dueFrom, dueTo]
   );
 
   const sortedTasks = useMemo(
@@ -151,15 +165,6 @@ function Tasks() {
       case "in_progress": return "進行中";
       case "done": return "完了";
       default: return status;
-    }
-  };
-
-  const getStatusVariant = (status: string) => {
-    switch (status) {
-      case "open": return "secondary";
-      case "in_progress": return "default";
-      case "done": return "outline";
-      default: return "secondary";
     }
   };
 
@@ -249,26 +254,47 @@ function Tasks() {
           </Dialog>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="タスク総数" value={stats.total} accent="from-primary to-blue-500" />
-          <StatCard title="未着手" value={stats.open} accent="from-amber-500 to-orange-400" />
-          <StatCard title="進行中" value={stats.inProgress} accent="from-purple-500 to-indigo-500" />
-          <StatCard title="完了" value={stats.done} accent="from-emerald-500 to-lime-400" />
-        </div>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="タスク総数" value={stats.total} accent="from-primary to-blue-500" />
+        <StatCard title="未着手" value={stats.open} accent="from-amber-500 to-orange-400" />
+        <StatCard title="進行中" value={stats.inProgress} accent="from-purple-500 to-indigo-500" />
+        <StatCard title="完了" value={stats.done} accent="from-emerald-500 to-lime-400" />
+      </div>
 
-        <div className="flex gap-4">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[220px] bg-background/80 backdrop-blur">
-              <SelectValue placeholder="ステータス" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover text-popover-foreground">
-              <SelectItem value="all">すべて</SelectItem>
-              <SelectItem value="open">未着手</SelectItem>
-              <SelectItem value="in_progress">進行中</SelectItem>
-              <SelectItem value="done">完了</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="flex flex-wrap gap-4">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[220px] bg-background/80 backdrop-blur">
+            <SelectValue placeholder="ステータス" />
+          </SelectTrigger>
+          <SelectContent className="bg-popover text-popover-foreground">
+            <SelectItem value="all">すべて</SelectItem>
+            <SelectItem value="open">未着手</SelectItem>
+            <SelectItem value="in_progress">進行中</SelectItem>
+            <SelectItem value="done">完了</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground">期限: から</Label>
+          <Input
+            type="date"
+            value={dueFrom}
+            onChange={e => setDueFrom(e.target.value)}
+            className="w-[170px]"
+          />
+          <Label className="text-sm text-muted-foreground">まで</Label>
+          <Input
+            type="date"
+            value={dueTo}
+            onChange={e => setDueTo(e.target.value)}
+            className="w-[170px]"
+          />
+          {(dueFrom || dueTo) && (
+            <Button variant="ghost" size="sm" onClick={() => { setDueFrom(""); setDueTo(""); }}>
+              クリア
+            </Button>
+          )}
         </div>
+      </div>
 
         <div className="space-y-3">
           {tasksLoading ? (
@@ -307,14 +333,24 @@ function Tasks() {
                             </Badge>
                           )}
                         </div>
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                          <Badge variant={getStatusVariant(task.status)} className="rounded-full bg-primary/10 text-primary">
-                            {getStatusLabel(task.status)}
-                          </Badge>
-                          <span className={cn("inline-flex items-center gap-1 text-xs", toneClass(tone))}>
-                            <Clock className="h-3.5 w-3.5" />
-                            {label}
-                          </span>
+                      <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                        <Select
+                          value={task.status}
+                          onValueChange={(value) => handleStatusChange(task.id, value as any)}
+                        >
+                          <SelectTrigger className="w-[150px] bg-background/70">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-popover text-popover-foreground">
+                            <SelectItem value="open">未着手</SelectItem>
+                            <SelectItem value="in_progress">進行中</SelectItem>
+                            <SelectItem value="done">完了</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <span className={cn("inline-flex items-center gap-1 text-xs", toneClass(tone))}>
+                          <Clock className="h-3.5 w-3.5" />
+                          {label}
+                        </span>
                           {task.dueDate && (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                               <CalendarDays className="h-3.5 w-3.5" />
@@ -347,12 +383,6 @@ function toneClass(tone: Tone) {
   return "text-muted-foreground";
 }
 
-function toDate(value?: Date | string | null) {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 function dueState(dueDate?: Date | string | null): { label: string; tone: Tone } {
   const date = toDate(dueDate);
   if (!date) return { label: "期限未設定", tone: "muted" };
@@ -361,7 +391,7 @@ function dueState(dueDate?: Date | string | null): { label: string; tone: Tone }
   if (diff === 0) return { label: "今日中", tone: "warning" };
   if (diff === 1) return { label: "明日まで", tone: "warning" };
   if (diff <= 3) return { label: `あと${diff}日`, tone: "warning" };
-  return { label: format(date, "M/d (E)", { locale: ja }), tone: "muted" };
+  return { label: formatDate(date, "M/d (E)"), tone: "muted" };
 }
 
 function StatCard({ title, value, accent }: { title: string; value: number; accent: string }) {

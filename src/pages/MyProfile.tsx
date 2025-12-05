@@ -459,7 +459,10 @@ export default function MyProfilePage() {
           .map((field, idx) => ({ ...field, order: idx })),
       };
     }
-    await persistProfile(next);
+    const normalized = normalizeProfileData(next);
+    setProfile(normalized);
+    setDraft(normalized);
+    await persistProfile(normalized);
   };
 
   const saveAll = async () => {
@@ -470,7 +473,10 @@ export default function MyProfilePage() {
       toast.error(allErrors[0]);
       return;
     }
-    await persistProfile(draft);
+    const normalized = normalizeProfileData(draft);
+    setProfile(normalized);
+    setDraft(normalized);
+    await persistProfile(normalized);
   };
 
   const resetDraft = () => {
